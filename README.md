@@ -26,7 +26,7 @@
 无需构建、无需安装任何依赖：
 
 ```bash
-git clone https://github.com/Limbskins/lifeline.git
+git clone https://github.com/Limbkins/lifeline.git
 cd lifeline
 open index.html        # macOS
 # 或直接双击 index.html
@@ -80,6 +80,6 @@ Chrome / Edge / Safari / Firefox 近两年版本。移动端已适配至 390px �
 
 ## 致谢
 
-设计与开发：[林布肯斯](https://github.com/Limbskins)
+设计与开发：[林布肯斯](https://github.com/Limbkins)
 
 专辑封面版权归各唱片公司及艺人所有，本项目仅作展示用途。
