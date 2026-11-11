@@ -1,0 +1,2366 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lifeline · 用专辑拼出你的人生坐标</title>
+    <style>
+/* ==========================================================================
+         Lifeline — 纯视觉升级（强制深色 / 背景墙 / 毛玻璃）
+         结构钩子保持不变：.c .pulse .s .sel .dragging .moving .grid
+                          .pop .toast .res .msg .bar .act .capbar
+         ========================================================================== */
+      :root {
+        color-scheme: dark;
+
+        /* 兼容旧变量名（JS 里有 var(--mute) 的引用） */
+        --bg: #111111;
+        --card: #1a1a1d;
+        --ink: #f4f4f6;
+        --mute: #85858f;
+        --line: #2a2a2f;
+        --ac: #ffffff;
+
+        /* 新语义变量 */
+        --bg-soft: #151517;
+        --surface: #1a1a1d;
+        --surface-2: #222226;
+        --ink-2: #c5c5cc;
+        --line-2: #3a3a41;
+        --danger: #8c1d18;
+        --r-sm: 8px;
+        --r-md: 12px;
+        --r-lg: 20px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: #111111;
+      }
+
+      body {
+        margin: 0;
+        background: transparent; /* 让 fixed 背景墙透出来 */
+        color: var(--ink);
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      ::selection {
+        background: rgba(255, 255, 255, 0.22);
+        color: #fff;
+      }
+
+      /* ====================== 背景墙（核心视觉） ====================== */
+      #wall {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+        background: #111111;
+      }
+
+      .wall-rot {
+        position: absolute;
+        left: 50%;
+        top: 27%;
+        width: 118vw;
+        transform: translate(-50%, -50%) rotate(-8deg);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .wall-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .wr {
+        overflow: hidden;
+        height: 240px;
+        contain: layout paint;
+      }
+
+      .wt {
+        display: flex;
+        gap: 10px;
+        width: max-content;
+        will-change: transform;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+        animation-duration: 90s;
+        /* 把每排提升为独立合成层：滚动与动画全部交给 GPU，
+           主线程只负责首次绘制，滚页面时不会因为背景墙而掉帧 */
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      }
+      .wr[data-dir="l"] .wt {
+        animation-name: wallL;
+      }
+      .wr[data-dir="r"] .wt {
+        animation-name: wallR;
+      }
+
+      @keyframes wallL {
+        from {
+          transform: translate3d(0, 0, 0);
+        }
+        to {
+          transform: translate3d(-50%, 0, 0);
+        }
+      }
+      @keyframes wallR {
+        from {
+          transform: translate3d(-50%, 0, 0);
+        }
+        to {
+          transform: translate3d(0, 0, 0);
+        }
+      }
+
+      .wtile {
+        flex: 0 0 auto;
+        width: 240px;
+        height: 240px;
+        border-radius: 16px;
+        overflow: hidden;
+        background: linear-gradient(140deg, #23232a, #17171b);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+      }
+      .wtile img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        opacity: 0;
+        transform: scale(1.04);
+        transition: opacity 0.55s ease, transform 0.55s ease;
+      }
+      .wtile img.on {
+        opacity: 1;
+        transform: scale(1);
+        /* 这批专辑（Taylor Swift / Phoebe Bridgers / Lorde 等）整体偏冷偏暗，
+           轻微提亮让它达到参考稿那种明亮封面的观感，同时保持色相不失真 */
+        filter: brightness(1.16) saturate(1.05);
+      }
+
+      /* 深色渐变蒙版：参照参考稿实测梯度校准
+         0-30% 基本通透，让封面保持明亮（参考稿顶部亮度 114-129）
+         30-42% 快速压暗（参考稿 35% 处已降到 35）
+         60% 之后到达 #111111（亮度 17），保证下方正文与网格完全可读 */
+      .wall-mask {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            to bottom,
+            rgba(17, 17, 17, 0) 0%,
+            rgba(17, 17, 17, 0) 28%,
+            rgba(17, 17, 17, 0.12) 33%,
+            rgba(17, 17, 17, 0.42) 38%,
+            rgba(17, 17, 17, 0.68) 43%,
+            rgba(17, 17, 17, 0.86) 49%,
+            rgba(17, 17, 17, 0.95) 55%,
+            #111111 62%
+          );
+      }
+
+      /* 滚动后进一步压暗，避免背景墙干扰下方表单与网格 */
+      #veil {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: #111111;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      /* 系统开启「减少动态效果」时暂停背景墙（尊重无障碍设置）。
+         注意用 animation-play-state 而不是 animation:none —— 这样用户点
+         「开启动效」后可以从当前位置平滑续播，不会突然跳一下。
+         html[data-motion="on"] 是用户主动选择覆盖系统设置的标记。 */
+      @media (prefers-reduced-motion: reduce) {
+        html:not([data-motion="on"]) .wt {
+          animation-play-state: paused !important;
+        }
+      }
+
+      /* 系统禁用了动效时，右下角浮出的小提示条（仅此时出现） */
+      .motion-tip {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 0;
+        z-index: 60;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 18px 10px;
+        border-radius: 14px 14px 0 0;
+        font: 500 12px/1.35 inherit;
+        letter-spacing: 0.02em;
+        color: #c8c8d0;
+        background: rgba(20, 20, 24, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-bottom: 0;
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.55);
+        cursor: pointer;
+        opacity: 0.8;
+        transition: opacity 0.25s ease, transform 0.25s ease, color 0.25s ease;
+      }
+      .motion-tip:hover {
+        opacity: 1;
+        color: #ffffff;
+        transform: translateX(-50%) translateY(-2px);
+      }
+      .motion-tip.dim {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%) translateY(100%);
+      }
+      .motion-tip:focus-visible {
+        outline: 2px solid rgba(255, 255, 255, 0.7);
+        outline-offset: 2px;
+      }
+      .motion-tip[hidden] {
+        display: none;
+      }
+      .motion-tip svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        opacity: 0.9;
+      }
+      @media (max-width: 640px) {
+        .motion-tip {
+          bottom: 14px;
+          max-width: calc(100vw - 28px);
+          font-size: 12px;
+          padding: 9px 14px 9px 11px;
+          white-space: nowrap;
+        }
+      }
+
+      /* ====================== 页面容器 ====================== */
+      .page {
+        position: relative;
+        z-index: 1;
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 22px 96px;
+      }
+
+      /* ====================== 头部标题 ====================== */
+      .hero {
+        padding: clamp(64px, 15vh, 150px) 0 4px;
+        text-align: center;
+      }
+      /* 文字保护区：只压暗中间的文字栏，左右两侧的封面保持原始明亮（参考稿的核心观感）。
+         横向渐变负责形成柔和暗带，纵向 mask 负责上下淡出，两者叠加出一个
+         「中间干净、两侧通透」的可读性底板。 */
+      .hero::before {
+        content: "";
+        position: fixed;
+        left: 50%;
+        top: 0;
+        width: min(1040px, 104vw);
+        height: 54vh;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: -1;
+        background: linear-gradient(
+          to right,
+          rgba(17, 17, 17, 0) 0%,
+          rgba(17, 17, 17, 0.1) 9%,
+          rgba(17, 17, 17, 0.45) 18%,
+          rgba(17, 17, 17, 0.78) 27%,
+          rgba(17, 17, 17, 0.88) 36%,
+          rgba(17, 17, 17, 0.88) 64%,
+          rgba(17, 17, 17, 0.78) 73%,
+          rgba(17, 17, 17, 0.45) 82%,
+          rgba(17, 17, 17, 0.1) 91%,
+          rgba(17, 17, 17, 0) 100%
+        );
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.75) 0%,
+          #000 22%,
+          #000 76%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.75) 0%,
+          #000 22%,
+          #000 76%,
+          rgba(0, 0, 0, 0) 100%
+        );
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(52px, 12vw, 118px);
+        line-height: 0.92;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+        color: #ffffff;
+        text-shadow: 0 26px 70px rgba(0, 0, 0, 0.6);
+      }
+      p.sub {
+        margin: 22px auto 0;
+        max-width: 600px;
+        color: #d8d8de;
+        font-size: 15px;
+        line-height: 1.85;
+        letter-spacing: 0.01em;
+        text-shadow: 0 2px 16px rgba(0, 0, 0, 0.85);
+      }
+
+      /* ====================== 搜索区（毛玻璃） ====================== */
+      .searchwrap {
+        display: flex;
+        justify-content: center;
+        margin: 30px 0 8px;
+      }
+      .glass {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: min(700px, 100%);
+        padding: 8px 8px 8px 22px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        backdrop-filter: blur(20px) saturate(150%);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease,
+          background 0.2s ease;
+      }
+      .glass:focus-within {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.34);
+        box-shadow: 0 18px 52px rgba(0, 0, 0, 0.6),
+          0 0 0 4px rgba(255, 255, 255, 0.06),
+          inset 0 1px 0 rgba(255, 255, 255, 0.14);
+      }
+      .glass input[type="text"] {
+        flex: 1;
+        min-width: 0;
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 0;
+        box-shadow: none !important;
+        color: #ffffff;
+        font-size: 15px;
+        padding: 13px 4px;
+        outline: none;
+        letter-spacing: 0.01em;
+      }
+      .glass input::placeholder {
+        color: rgba(255, 255, 255, 0.42);
+      }
+      .glass button#go {
+        flex: 0 0 auto;
+        width: 46px;
+        height: 46px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        color: #ffffff;
+        cursor: pointer;
+        transition: background 0.18s ease, border-color 0.18s ease,
+          transform 0.14s ease;
+      }
+      .glass button#go:hover {
+        background: rgba(255, 255, 255, 0.18);
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+      .glass button#go:active {
+        transform: scale(0.93);
+      }
+      .glass button#go svg {
+        width: 19px;
+        height: 19px;
+        display: block;
+      }
+
+      /* ====================== 表单控件（全站深色） ====================== */
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+        color: var(--ink);
+      }
+
+      input[type="text"],
+      input[type="search"],
+      textarea,
+      select {
+        background: #222226;
+        border: 1px solid var(--line-2);
+        border-radius: 10px;
+        padding: 10px 12px;
+        color: var(--ink);
+        outline: none;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease,
+          background 0.18s ease;
+      }
+      input[type="text"]:focus,
+      input[type="search"]:focus,
+      textarea:focus,
+      select:focus {
+        border-color: rgba(255, 255, 255, 0.42);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--mute);
+      }
+
+      select {
+        -webkit-appearance: none;
+        appearance: none;
+        padding-right: 34px;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.4 4.4 6 8l3.6-3.6' fill='none' stroke='%23a8a8b2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        cursor: pointer;
+      }
+      select option {
+        background: #1c1c20;
+        color: var(--ink);
+      }
+
+      input[type="file"] {
+        max-width: 100%;
+        color: var(--ink-2);
+        background: #222226;
+        border: 1px dashed var(--line-2);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      input[type="file"]::file-selector-button {
+        background: #2e2e34;
+        color: var(--ink);
+        border: 1px solid var(--line-2);
+        border-radius: 7px;
+        padding: 6px 10px;
+        margin-right: 10px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+
+      button {
+        cursor: pointer;
+        background: #24242a;
+        border: 1px solid var(--line-2);
+        border-radius: 10px;
+        padding: 10px 16px;
+        color: var(--ink);
+        transition: background 0.18s ease, border-color 0.18s ease,
+          transform 0.14s ease, opacity 0.18s ease;
+      }
+      button:hover {
+        background: #2c2c33;
+      }
+      button:active {
+        transform: scale(0.97);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* 主按钮：白底黑字，深色界面上最醒目 */
+      button.p {
+        background: #ffffff;
+        border-color: #ffffff;
+        color: #111111;
+        font-weight: 600;
+      }
+      button.p:hover {
+        background: #e9e9ee;
+        border-color: #e9e9ee;
+      }
+
+      /* 清空：深红 */
+      #clr {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #ffffff;
+      }
+      #clr:hover {
+        background: #a32219;
+        border-color: #a32219;
+      }
+
+      /* 下载 */
+      #dl {
+        background: #1f3a28;
+        border-color: #2c5a3a;
+        color: #b9f2c9;
+      }
+      #dl:hover {
+        background: #24452f;
+      }
+
+      /* ====================== 通用区块 ====================== */
+      .bar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      input[type="text"] {
+        min-width: 150px;
+      }
+      .bar input[type="text"] {
+        flex: 1;
+      }
+
+      .msg {
+        color: var(--mute);
+        margin: 14px 0;
+        font-size: 13.5px;
+      }
+
+      details {
+        margin: 14px 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+      summary {
+        cursor: pointer;
+        color: var(--ink-2);
+        font-size: 14px;
+      }
+      details .bar {
+        margin-top: 12px;
+      }
+
+      h2 {
+        font-size: 17px;
+        margin: 36px 0 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+        letter-spacing: 0.01em;
+      }
+      h2 small {
+        color: var(--mute);
+        font-weight: 400;
+        font-size: 13px;
+      }
+      .capbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--mute);
+        white-space: nowrap;
+      }
+      .capbar select {
+        padding: 6px 30px 6px 10px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+
+      /* ====================== 搜索结果卡片 ====================== */
+      .res {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 10px;
+        margin: 14px 0;
+      }
+      .c {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        text-align: left;
+        padding: 0;
+        color: var(--ink);
+        transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.3, 1),
+          box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        will-change: transform;
+      }
+      .c:hover {
+        background: #202024;
+        border-color: var(--line-2);
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+      }
+      .c:active {
+        transform: scale(0.94);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+      .c img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        display: block;
+        background: #1a1a1d;
+      }
+      .c div {
+        padding: 8px 9px 9px;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .c b {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 600;
+      }
+      .c span {
+        color: var(--mute);
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .c.pulse {
+        animation: cpulse 0.32s ease;
+      }
+      @keyframes cpulse {
+        0%,
+        100% {
+          transform: scale(0.94);
+        }
+        55% {
+          transform: scale(1.04);
+        }
+      }
+
+      /* ====================== 待选网格 ====================== */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(var(--cols, 5), 1fr);
+        gap: 8px;
+      }
+      .s {
+        aspect-ratio: 1;
+        background: rgba(255, 255, 255, 0.025);
+        border: 1px dashed #444444;
+        border-radius: 10px;
+        position: relative;
+        overflow: hidden;
+        cursor: pointer;
+        transition: box-shadow 0.18s ease, border-color 0.18s ease,
+          transform 0.18s ease, background 0.18s ease;
+      }
+      .s:hover {
+        border-color: #6a6a73;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .s img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .s i {
+        position: absolute;
+        right: 4px;
+        top: 4px;
+        background: rgba(0, 0, 0, 0.62);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+        color: #fff;
+        font-style: normal;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        text-align: center;
+        line-height: 20px;
+        font-size: 13px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      .s:hover i,
+      .s.sel i {
+        opacity: 1;
+      }
+      .s u {
+        position: absolute;
+        left: 5px;
+        bottom: 4px;
+        font: 700 10px/1 sans-serif;
+        color: #fff;
+        text-decoration: none;
+        text-shadow: 0 1px 4px #000;
+      }
+      /* 选中：白描边 + 光晕，铺一层近白底显示名次提示 */
+      .s.sel {
+        border-style: solid;
+        border-color: #ffffff;
+        box-shadow: 0 0 0 2px #ffffff, 0 0 0 7px rgba(255, 255, 255, 0.12);
+        z-index: 3;
+      }
+      .s.sel::after {
+        content: attr(data-tip);
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 6px;
+        font-size: 11px;
+        line-height: 1.3;
+        font-weight: 700;
+        color: #111111;
+        background: rgba(255, 255, 255, 0.92);
+        pointer-events: none;
+      }
+      .s.dragging {
+        opacity: 0.45;
+        transform: scale(0.92);
+        box-shadow: 0 0 0 2px #ffffff;
+      }
+      /* 抓起后其余格子给出可放置提示 */
+      .grid.moving .s {
+        border-style: solid;
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+      .grid.moving .s:not(.dragging):hover {
+        border-color: #ffffff;
+        box-shadow: inset 0 0 0 2px #ffffff;
+      }
+
+      /* ====================== 底部操作区 ====================== */
+      .act {
+        display: flex;
+        gap: 10px;
+        margin: 22px 0;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+      }
+
+      canvas {
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        display: none;
+        background: #0c0c0e;
+        margin-top: 12px;
+      }
+
+      /* ====================== 毛玻璃 Toast ====================== */
+      .toast {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translate(-50%, -20px);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: rgba(30, 30, 34, 0.62);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        color: #f4f4f6;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease,
+          transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.25);
+        z-index: 9998;
+        max-width: calc(100vw - 40px);
+      }
+      .toast.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .toast i {
+        font-style: normal;
+        font-size: 15px;
+        color: #ffffff;
+      }
+
+      /* ====================== 格子操作菜单 ====================== */
+      .pop {
+        position: fixed;
+        z-index: 9999;
+        background: #1b1b1f;
+        border: 1px solid var(--line-2);
+        border-radius: 12px;
+        padding: 5px;
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.62);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 132px;
+        animation: popin 0.13s ease;
+      }
+      .pop[hidden] {
+        display: none;
+      }
+      @keyframes popin {
+        from {
+          opacity: 0;
+          transform: scale(0.94);
+        }
+      }
+      .pop button {
+        border: 0;
+        background: transparent;
+        text-align: left;
+        padding: 9px 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        color: var(--ink);
+      }
+      .pop button:hover {
+        background: rgba(255, 255, 255, 0.09);
+      }
+      .pop button.danger {
+        color: #ff6b60;
+      }
+
+      /* ====================== 页脚 ====================== */
+      .foot {
+        margin: 64px 0 0;
+        padding-top: 26px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        text-align: center;
+        color: var(--mute);
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        line-height: 2.1;
+      }
+      .foot .brand {
+        display: block;
+        color: #e6e6ea;
+        font-weight: 700;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+      /* 祝福语：填了 <p class="wish"> 才会显示，没填不影响布局 */
+      .foot .wish {
+        margin: 10px auto 12px;
+        max-width: 520px;
+        color: #b9b9c2;
+        font-size: 12.5px;
+        line-height: 1.9;
+        letter-spacing: 0.04em;
+      }
+
+      /* ====================== 响应式 ====================== */
+      @media (max-width: 640px) {
+        .page {
+          padding: 0 16px 80px;
+        }
+        .wtile {
+          width: 118px;
+          height: 118px;
+          border-radius: 10px;
+        }
+        .wr {
+          height: 118px;
+        }
+        .wt,
+        .wall-rows {
+          gap: 8px;
+        }
+        .wall-rot {
+          top: 24%;
+          width: 190vw;
+        }
+        .hero {
+          padding-top: 54px;
+        }
+        .hero::before {
+          width: 108vw;
+          height: 46vh;
+        }
+        p.sub {
+          margin-top: 16px;
+          max-width: 340px;
+          font-size: 13.5px;
+          line-height: 1.75;
+        }
+        .glass {
+          padding-left: 16px;
+        }
+        .res {
+          grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ====================== 顶部背景墙 ====================== -->
+    <div id="wall" aria-hidden="true">
+      <div class="wall-rot">
+        <div class="wall-rows">
+          <div class="wr" data-dir="l"><div class="wt" id="wt0"></div></div>
+          <div class="wr" data-dir="r"><div class="wt" id="wt1"></div></div>
+          <div class="wr" data-dir="l"><div class="wt" id="wt2"></div></div>
+          <div class="wr" data-dir="r"><div class="wt" id="wt3"></div></div>
+        </div>
+      </div>
+      <div class="wall-mask"></div>
+    </div>
+    <div id="veil" aria-hidden="true"></div>
+
+    <div class="page">
+      <!-- ====================== 头部标题 ====================== -->
+      <header class="hero">
+        <h1>Lifeline</h1>
+        <p class="sub">
+          用一张专辑图，标记你的人生坐标。寻觅、收录、定格成章。<br />
+          搜索专辑加入列表，搜不到就手动上传，选好数量后一键生成海报。
+        </p>
+      </header>
+
+      <!-- ====================== 搜索区（毛玻璃） ====================== -->
+      <div class="searchwrap">
+        <div class="glass">
+          <input type="text" id="q" placeholder="Search artists, tracks, or albums…" aria-label="搜索专辑或艺人" />
+          <button id="go" type="button" aria-label="搜索">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m16.5 16.5 4 4"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="msg" class="msg" style="text-align: center"></div>
+      <div class="res" id="res"></div>
+
+    <details>
+      <summary>搜不到？手动添加</summary>
+      <div class="bar">
+        <input type="file" id="f" accept="image/*" />
+        <input type="text" id="mn" placeholder="专辑名" />
+        <input type="text" id="ma" placeholder="艺人" />
+        <button id="madd">添加</button>
+      </div>
+    </details>
+
+    <h2>
+      <span>我的列表</span>
+      <span class="capbar">
+        <small id="cnt"></small>
+        <label for="cap">上限</label>
+        <select id="cap">
+          <option value="9">9 张</option>
+          <option value="16">16 张</option>
+          <option value="25">25 张</option>
+          <option value="50" selected>50 张</option>
+          <option value="100">100 张</option>
+        </select>
+      </span>
+    </h2>
+    <div class="grid" id="grid"></div>
+    <p class="msg" style="font-size: 13px">
+      点搜索结果即加入（补齐排序）；点空格子选中名次后精准填入；点已有图片可替换或删除；长按/拖拽可调整顺序。
+    </p>
+
+    <!-- 标题和作者输入 -->
+    <div class="bar" style="margin-top: 20px; align-items: center;">
+      <label style="font-size: 14px; color: var(--mute); white-space: nowrap;">标题：</label>
+      <input type="text" id="title" value="Top Albums of My Life" style="flex: 1" />
+    </div>
+    <div class="bar" style="margin-top: 12px; align-items: center;">
+      <label style="font-size: 14px; color: var(--mute); white-space: nowrap;">作者：</label>
+      <input type="text" id="author" value="" placeholder="你的名字" style="flex: 1" />
+    </div>
+    
+    <!-- 排版设置（居中） -->
+    <div class="bar" style="margin-top: 20px; align-items: center; justify-content: center;">
+      <label style="font-size: 14px; color: var(--mute); margin-right: 5px;">样式：</label>
+      <select id="showInfo" style="flex: none; padding-left: 12px;">
+        <option value="0" selected>纯净封面 (排名阶梯排版)</option>
+        <option value="1">保留专辑文字</option>
+      </select>
+      <label style="font-size: 14px; color: var(--mute); margin: 0 5px 0 12px;">布局：</label>
+      <select id="layoutSel" style="flex: none; padding-left: 12px;">
+        <option value="auto" selected>自动（平方数用方形网格）</option>
+        <option value="square">正方形网格</option>
+        <option value="stair">阶梯排版</option>
+      </select>
+    </div>
+
+    <!-- 按钮区（居中） -->
+    <div class="act">
+      <button class="p" id="gen">生成图片</button>
+      <button id="dl" style="display: none">下载图片</button>
+      <button id="clr">清空</button>
+    </div>
+    <div id="warn" class="msg" style="text-align: center;"></div>
+    <canvas id="cv"></canvas>
+
+      <!-- ====================== 页脚 ====================== -->
+      <footer class="foot">
+        <span class="brand">Lifeline</span>
+
+        <!-- ↓↓↓ 祝福语写在第 960 行这里，样式已备好，直接填字即可 ↓↓↓ -->
+        <!-- <p class="wish">在这里写祝福语</p> -->
+        <!-- ↑↑↑ 填完后把上一行整行的注释符号删掉，变成 <p class="wish">你的祝福语</p> ↑↑↑ -->
+
+        <span>Designed &amp; Built by 林布肯斯</span>
+      </footer>
+    </div>
+    <!-- /.page -->
+
+    <!-- 毛玻璃提示 -->
+    <div id="toast" class="toast"></div>
+    <!-- 格子操作菜单 -->
+    <div id="pop" class="pop" hidden></div>
+    <!-- 替换用的隐藏文件选择器 -->
+    <input type="file" id="rf" accept="image/*" hidden />
+
+    <!-- 系统关闭动效时才显示：一键开启动效 -->
+    <button class="motion-tip" id="motionTip" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 5v14l11-7z" />
+      </svg>
+      <span>系统动效已关闭，点此启用背景动效</span>
+    </button>
+
+    <script>
+      const CAP_KEY = "top50cap";
+      const CAPS = [9, 16, 25, 50, 100];
+      let MAX = 50;
+      try {
+        const v = +localStorage.getItem(CAP_KEY);
+        if (CAPS.includes(v)) MAX = v;
+      } catch (e) {}
+      let items = [];
+      const $ = (id) => document.getElementById(id);
+      $("cap").value = String(MAX);
+
+      // ===== 顶部背景墙：iTunes 拉小图，四排反向无缝滚动 =====
+      (function initWall() {
+        // 28 张专辑清单（写死）
+        const ALBUMS = [
+          ["Taylor Swift", "evermore"],
+          ["Taylor Swift", "Midnights"],
+          ["Taylor Swift", "The Tortured Poets Department Anthology"],
+          ["Phoebe Bridgers", "Punisher"],
+          ["Phoebe Bridgers", "Stranger in the Alps"],
+          ["Phoebe Bridgers", "Lost Weekend"],
+          ["Gracie Abrams", "The Secret of Us"],
+          ["The 1975", "Being Funny in A Foreign Language"],
+          ["Vance Joy", "Dream Your Life Away"],
+          ["Harry Styles", "Harry's House"],
+          ["Olivia Rodrigo", "SOUR"],
+          ["Chilichill", "混入人类计划"],
+          ["Calum Scott", "Bridges"],
+          ["Haim", "I quit"],
+          ["孙燕姿", "逆光"],
+          ["Hamilton", "Original Broadway Cast Recording"],
+          ["Dear Evan Hansen", "Original Broadway Cast Recording"],
+          ["Sam Hunt", "Montevallo"],
+          ["Billie Eilish", "HIT ME HARD AND SOFT"],
+          ["The Weeknd", "After Hours"],
+          ["孙燕姿", "风筝"],
+          ["Sam Fender", "Seventeen Going Under"],
+          ["beabadoobee", "Beatopia"],
+          ["Badly Drawn Boy", "The Hour of Bewilderbeast"],
+          ["Ariana Grande", "eternal sunshine"],
+          ["Lorde", "Virgin"],
+          ["Lorde", "Melodrama"],
+          ["Roo Panes", "The Summer Isles"],
+        ];
+
+        // 封面取图分辨率：按「实际渲染尺寸 × 设备像素密度」算，保证永远是缩小而不是放大。
+        // 桌面 tile 240px @2x = 480 物理像素 → 取 600 留 25% 余量
+        // 移动 tile 118px @3x = 354 物理像素 → 同样取 600 也够
+        // 600x600 实测单张仅 28KB（iTunes 压缩率很高），28 张合计约 0.8MB
+        const DPR = Math.min(window.devicePixelRatio || 1, 3);
+        const IS_SMALL = window.matchMedia("(max-width: 640px)").matches;
+        const CSS_TILE = IS_SMALL ? 118 : 240; // 与 CSS 里的 .wtile 保持一致
+        const NEED_PX = CSS_TILE * DPR;
+        // 取不小于需求的最小档位：需求 480 → 600，需求 354 → 400，需求 240 → 300
+        const ART_SIZE = NEED_PX > 400 ? 600 : NEED_PX > 240 ? 400 : 300;
+
+        // 缓存键带上分辨率：换尺寸必须换 key，否则会一直读到旧的低清缓存
+        const CACHE_KEY = "wallArt_" + ART_SIZE;
+        const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 一周
+
+        // 每张专辑的 iTunes collectionId（已逐一核对，与上面清单严格一一对应）
+        // 用 lookup 直接取图：一次请求可拿多张、无需搜索匹配，快且稳。
+        const IDS = [1544268281,1645937456,1742057774,1504699857,1256607808,6781051268,1773473685,1850018862,898051683,1615584999,1560735414,1765302287,1619567066,1809849957,905226289,1129446206,1440675841,1440858319,1739659134,1499378108,1183070065,1578777962,1608069810,1540689690,1800579610,1810905299,1429662346,1651371831];
+
+        // 按行分 4 组（轮转分配，保证每排风格混合）
+        const groups = [[], [], [], []];
+        ALBUMS.forEach((a, i) => groups[i % 4].push(a));
+
+        // 把任意尺寸后缀归一为目标尺寸，统一用 .jpg（比 png 小很多，视觉无差别）
+        const smallArt = (u) =>
+          String(u)
+            .replace(/\/\d+x\d+bb\.(jpg|jpeg|png|webp)$/i, "/" + ART_SIZE + "x" + ART_SIZE + "bb.jpg")
+            .replace(/\/\d+x\d+bb\./i, "/" + ART_SIZE + "x" + ART_SIZE + "bb.");
+
+        function paint(rows) {
+          rows.forEach((list, r) => {
+            const track = $("wt" + r);
+            if (!track || !list.length) return;
+            track.innerHTML = "";
+            // 复制两遍：配合 translateX(-50%) 实现无缝循环
+            for (let copy = 0; copy < 2; copy++) {
+              list.forEach((item) => {
+                const d = document.createElement("div");
+                d.className = "wtile";
+                if (item && item.url) {
+                  const im = document.createElement("img");
+                  im.alt = "";
+                  im.decoding = "async";
+                  im.onload = () => im.classList.add("on");
+                  im.onerror = () => im.remove();
+                  im.src = item.url;
+                  d.appendChild(im);
+                }
+                track.appendChild(d);
+              });
+            }
+            // 错开每排节奏，避免四排同步起步
+            track.style.animationDelay = -(r * 7) + "s";
+          });
+        }
+
+        // 先用清单里的信息铺骨架（撑起高度，避免首屏空白）
+        const skeleton = groups.map((g) => g.map(([artist, album]) => ({ artist, album, url: "" })));
+
+        function buildFromIds(map) {
+          return groups.map((g) =>
+            g.map(([artist, album]) => ({ artist, album, url: map[String(artist + "|" + album)] || "" }))
+          );
+        }
+
+        function readCache() {
+          try {
+            const raw = localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            const o = JSON.parse(raw);
+            if (!o || !o.map || Date.now() - (o.t || 0) > CACHE_TTL) return null;
+            // 关键：至少拿到一半封面才算有效缓存，绝不能把空结果缓存下来
+            const vals = Object.values(o.map).filter(Boolean);
+            if (vals.length < ALBUMS.length / 2) return null;
+            return o.map;
+          } catch (e) {
+            return null;
+          }
+        }
+        function writeCache(map) {
+          try {
+            // 只在拿到足够多封面时才写缓存，避免一次网络抖动导致背景墙永久空白
+            const vals = Object.values(map).filter(Boolean);
+            if (vals.length < ALBUMS.length / 2) return;
+            localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), map }));
+          } catch (e) {}
+        }
+
+        // 用 collectionId 批量 lookup 取封面。
+        // file:// 页面的 origin 是 null，iTunes 不返回 CORS 头，所以 fetch 会被拦截 ——
+        // 必须走 JSONP（与主搜索的回退方式一致）。
+        function jsonpBatch(ids) {
+          return new Promise((resolve) => {
+            const cb = "wallCb" + Date.now() + Math.floor(Math.random() * 1e6);
+            const sc = document.createElement("script");
+            let settled = false;
+            const done = (val) => {
+              if (settled) return;
+              settled = true;
+              try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+              if (sc.parentNode) sc.remove();
+              resolve(val || {});
+            };
+            window[cb] = (d) => {
+              const out = {};
+              for (const x of (d && d.results) || []) {
+                if (x && x.collectionId && x.artworkUrl100) {
+                  out[String(x.collectionId)] = smallArt(x.artworkUrl100);
+                }
+              }
+              done(out);
+            };
+            sc.onerror = () => done({});
+            sc.src = "https://itunes.apple.com/lookup?id=" + ids.join(",") + "&country=us&callback=" + cb;
+            document.body.appendChild(sc);
+            setTimeout(() => done({}), 8000);
+          });
+        }
+
+        const cached = readCache();
+        if (cached) {
+          paint(buildFromIds(cached));
+          return;
+        }
+
+        paint(skeleton); // 先骨架
+
+        (async () => {
+          const map = {};
+          const CHUNK = 10;
+          for (let i = 0; i < IDS.length; i += CHUNK) {
+            const chunk = IDS.slice(i, i + CHUNK);
+            try {
+              const got = await jsonpBatch(chunk);
+              // collectionId → 清单里的 artist|album 键
+              chunk.forEach((id) => {
+                const idxInList = IDS.indexOf(id);
+                const pair = ALBUMS[idxInList];
+                if (pair && got[String(id)]) {
+                  map[pair[0] + "|" + pair[1]] = got[String(id)];
+                }
+              });
+              if (Object.keys(map).length) paint(buildFromIds(map));
+            } catch (e) {
+              /* 单批失败不影响其他批次 */
+            }
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          paint(buildFromIds(map));
+          writeCache(map);
+        })();
+      })();
+
+      // ===== 存储层：IndexedDB（localStorage 只有 5MB，装不下 100 张封面） =====
+      const DB_NAME = "lifeline";
+      const STORE = "kv";
+      let dbPromise = null;
+      function openDB() {
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise((resolve, reject) => {
+          const rq = indexedDB.open(DB_NAME, 1);
+          rq.onupgradeneeded = () => {
+            if (!rq.result.objectStoreNames.contains(STORE)) rq.result.createObjectStore(STORE);
+          };
+          rq.onsuccess = () => resolve(rq.result);
+          rq.onerror = () => reject(rq.error);
+        });
+        return dbPromise;
+      }
+      async function idbSet(key, val) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, "readwrite");
+          tx.objectStore(STORE).put(val, key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+      async function idbGet(key) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, "readonly");
+          const rq = tx.objectStore(STORE).get(key);
+          rq.onsuccess = () => resolve(rq.result);
+          rq.onerror = () => reject(rq.error);
+        });
+      }
+      async function idbDel(key) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, "readwrite");
+          tx.objectStore(STORE).delete(key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      let saveTimer = null;
+      function save() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(async () => {
+          try {
+            await idbSet("items", items);
+          } catch (e) {
+            $("msg").textContent = "本地保存失败（存储空间可能不足），但不影响生成图片。";
+          }
+        }, 250);
+      }
+
+      // ===== 毛玻璃 Toast（停留 1 秒） =====
+      let toastTimer = null;
+      function toast(msg, icon) {
+        const el = $("toast");
+        el.innerHTML = '<i>' + (icon || "✓") + "</i><span></span>";
+        el.querySelector("span").textContent = msg;
+        el.classList.add("on");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove("on"), 1000);
+      }
+      async function migrate() {
+        try {
+          const old = localStorage.getItem("top50");
+          if (!old) return;
+          const arr = JSON.parse(old);
+          if (Array.isArray(arr) && arr.length) {
+            const cur = await idbGet("items");
+            if (!cur || !cur.length) {
+              items = arr;
+              await idbSet("items", items);
+            }
+          }
+          localStorage.removeItem("top50");
+        } catch (e) {}
+      }
+
+      (async () => {
+        await migrate();
+        try {
+          const saved = await idbGet("items");
+          if (Array.isArray(saved)) items = saved;
+        } catch (e) {}
+        // 兼容旧数据：旧的紧凑数组里可能没有 null，稀疏模型下无需转换
+        if (filledCount() > MAX) MAX = CAPS.find((c) => c >= filledCount()) || 100;
+        $("cap").value = String(MAX);
+        render();
+      })();
+
+      // ===== 交互状态 =====
+      // items 为「稀疏槽位」数组：下标即名次，空位为 null
+      // 这样才能做到「点第 6 格就填进第 6 名」，而不是被紧凑化前移
+      let selectedSlot = -1;   // 已选中的空格子（等待填入的"名次"）
+      let replaceTarget = -1;  // 已选中的已有格子（等待替换）
+      let dragFrom = -1;       // 长按/拖拽源索引
+      let grabAt = 0;          // 抓起的时刻，用于吞掉长按尾随的那一次 click
+
+      const filled = () => items.filter(Boolean);
+      const filledCount = () => filled().length;
+      const lastFilledIndex = () => {
+        for (let i = items.length - 1; i >= 0; i--) if (items[i]) return i;
+        return -1;
+      };
+
+      function clearSelection() {
+        selectedSlot = -1;
+        replaceTarget = -1;
+      }
+
+      // 长按会在同一格上尾随一次 click（手指抬起时）。
+      // 用时间窗判断：抓起后极短时间内的同格 click 不当作「放下」。
+      function isTailClick(i) {
+        return dragFrom === i && Date.now() - grabAt < 260;
+      }
+      function dropGrab() {
+        dragFrom = -1;
+        grabAt = 0;
+      }
+
+      function add(it) {
+        // 1. 替换模式：直接替换目标名次
+        if (replaceTarget >= 0 && items[replaceTarget]) {
+          const rank = replaceTarget + 1;
+          items[replaceTarget] = it;
+          clearSelection();
+          save();
+          render();
+          toast(`已替换第 ${rank} 名`, "↻");
+          return;
+        }
+        // 2. 去重（只看已填格子）
+        if (filled().some((x) => x.name === it.name && x.artist === it.artist)) {
+          $("msg").textContent = "这张已经在列表里了。";
+          toast("已在列表中", "!");
+          return;
+        }
+        // 3. 名额已满
+        if (filledCount() >= MAX) {
+          $("msg").textContent = "上限是 " + MAX + " 张，先删几张或调高上限。";
+          toast("已满 " + MAX + " 张", "!");
+          return;
+        }
+        // 4. 精准填入选中名次；未选则落在最后一个已填之后
+        let rank;
+        if (selectedSlot >= 0 && selectedSlot < MAX) {
+          const at = selectedSlot;
+          while (items.length <= at) items.push(null);
+          // 该槽若恰好被占（并发情况），顺延到后面第一个空位
+          let pos = at;
+          while (pos < MAX && items[pos]) pos++;
+          if (pos >= MAX) pos = items.length;
+          while (items.length <= pos) items.push(null);
+          items[pos] = it;
+          rank = pos + 1;
+        } else {
+          const pos = lastFilledIndex() + 1;
+          while (items.length <= pos) items.push(null);
+          items[pos] = it;
+          rank = pos + 1;
+        }
+        clearSelection();
+        save();
+        render();
+        toast(`已加入第 ${rank} 名`);
+      }
+
+      // 上传的图片统一压成 1:1 正方形（居中 cover 裁切），避免变形
+      function fileToSquare(file, cb) {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const im = new Image();
+          im.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = c.height = 500;
+            const x = c.getContext("2d");
+            const s = Math.min(im.width, im.height);
+            x.drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 500, 500);
+            cb(c.toDataURL("image/jpeg", 0.85));
+          };
+          im.onerror = () => cb(null);
+          im.src = fr.result;
+        };
+        fr.onerror = () => cb(null);
+        fr.readAsDataURL(file);
+      }
+
+      // ===== 格子操作菜单 =====
+      function closePop() {
+        $("pop").hidden = true;
+      }
+      function openPop(idx, anchor) {
+        const p = $("pop");
+        p.innerHTML = "";
+        const mk = (label, danger, fn) => {
+          const b = document.createElement("button");
+          b.textContent = label;
+          if (danger) b.className = "danger";
+          b.onclick = () => {
+            closePop();
+            fn();
+          };
+          p.appendChild(b);
+        };
+        mk("用搜索结果替换", false, () => {
+          replaceTarget = idx;
+          selectedSlot = -1;
+          render();
+          toast(`已选中第 ${idx + 1} 名，点搜索结果即可替换`, "⊕");
+        });
+        mk("上传图片替换", false, () => {
+          replaceTarget = idx;
+          $("rf").value = "";
+          $("rf").click();
+        });
+        mk("删除这张", true, () => {
+          const rank = idx + 1;
+          items[idx] = null;
+          clearSelection();
+          save();
+          render();
+          toast(`已删除第 ${rank} 名`, "✕");
+        });
+
+        p.hidden = false;
+        // 定位：优先贴格子下方，超出视口则上翻
+        const r = anchor.getBoundingClientRect();
+        const pr = p.getBoundingClientRect();
+        let left = r.left + r.width / 2 - pr.width / 2;
+        let top = r.bottom + 6;
+        left = Math.max(8, Math.min(left, window.innerWidth - pr.width - 8));
+        if (top + pr.height > window.innerHeight - 8) top = Math.max(8, r.top - pr.height - 6);
+        p.style.left = left + "px";
+        p.style.top = top + "px";
+      }
+
+      $("cap").onchange = () => {
+        const v = +$("cap").value;
+        MAX = v;
+        try {
+          localStorage.setItem(CAP_KEY, String(v));
+        } catch (e) {}
+        clearSelection();
+        // 超出上限的槽位直接丢弃（保留前 MAX 个名次）
+        if (items.length > MAX) {
+          const over = filled().length - items.slice(0, MAX).filter(Boolean).length;
+          items = items.slice(0, MAX);
+          save();
+          if (over > 0) toast(`上限改为 ${MAX} 张，超出的 ${over} 张已裁掉`, "!");
+        }
+        render();
+      };
+
+      function render(opts) {
+        const g = $("grid");
+        g.innerHTML = "";
+        const keepScroll = opts && opts.keepScroll ? window.scrollY : null;
+
+        // 列数自适应：让空位尽量少，最多 12 列
+        const wide = window.innerWidth >= 700;
+        let cols;
+        if (isPerfectSquare(MAX)) {
+          // 平方数：直接 √N × √N，绝不出现空洞
+          cols = Math.round(Math.sqrt(MAX));
+        } else if (MAX <= 9) cols = wide ? 5 : 3;
+        else if (MAX <= 16) cols = wide ? 8 : 4;
+        else if (MAX <= 25) cols = wide ? 9 : 4;
+        else if (MAX <= 50) cols = wide ? 10 : 5;
+        else cols = wide ? 12 : 6;
+        // 非平方数：选能整除 MAX、或余数最小的列数，减少末行空洞
+        if (!isPerfectSquare(MAX)) {
+          const cands = wide ? [12, 11, 10, 9, 8, 7, 6, 5] : [6, 5, 4, 3];
+          let bestCols = cols, bestHole = MAX % cols === 0 ? 0 : cols - (MAX % cols);
+          for (const c of cands) {
+            const hole = MAX % c === 0 ? 0 : c - (MAX % c);
+            // 优先：余数为 0；其次空洞更少且列数不过窄
+            if (hole < bestHole) { bestHole = hole; bestCols = c; }
+            else if (hole === bestHole && Math.abs(c - cols) < Math.abs(bestCols - cols)) bestCols = c;
+          }
+          cols = bestCols;
+        }
+        g.style.setProperty("--cols", String(cols));
+
+        for (let i = 0; i < MAX; i++) {
+          const cell = document.createElement("div");
+          cell.className = "s";
+          cell.dataset.idx = String(i);
+          const it = items[i];
+
+          if (it) {
+            cell.draggable = true;
+            cell.title = it.name + (it.artist ? " - " + it.artist : "");
+            cell.dataset.tip = "第 " + (i + 1) + " 名\n点按替换或删除";
+            const im = document.createElement("img");
+            im.alt = "";
+            im.src = it.src;
+            const u = document.createElement("u");
+            u.textContent = String(i + 1);
+            cell.appendChild(im);
+            cell.appendChild(u);
+
+            const del = document.createElement("i");
+            del.textContent = "×";
+            del.title = "删除";
+            del.onclick = (e) => {
+              e.stopPropagation();
+              items[i] = null; // 稀疏：留空位而非前移，名次不串位
+              clearSelection();
+              save();
+              render();
+              toast(`已删除第 ${i + 1} 名`, "✕");
+            };
+            cell.appendChild(del);
+
+            // 桌面：原生拖拽
+            cell.ondragstart = (e) => {
+              dragFrom = i;
+              grabAt = Date.now();
+              cell.classList.add("dragging");
+              e.dataTransfer.setData("text/plain", String(i));
+              e.dataTransfer.effectAllowed = "move";
+            };
+            cell.ondragend = () => {
+              cell.classList.remove("dragging");
+              dropGrab();
+              $("grid").classList.remove("moving");
+            };
+
+            // 点按已有图片：打开操作菜单
+            cell.onclick = () => {
+              // 长按抬起时的尾随 click：不当作放下
+              if (isTailClick(i)) return;
+              // 移动模式：已有图片也可作为落点（交换）；点自己则取消
+              if (dragFrom >= 0) {
+                if (dragFrom === i) { dropGrab(); render({ keepScroll: true }); toast("已取消移动", "·"); return; }
+                moveItem(dragFrom, i);
+                return;
+              }
+              const p = $("pop");
+              if (!p.hidden && p.dataset.idx === String(i)) {
+                closePop();
+                return;
+              }
+              p.dataset.idx = String(i);
+              openPop(i, cell);
+            };
+          } else {
+            // 空格子：显示浅色名次，点按选中
+            const u = document.createElement("u");
+            u.textContent = String(i + 1);
+            u.style.opacity = "0.35";
+            u.style.color = "var(--mute)";
+            u.style.textShadow = "none";
+            cell.appendChild(u);
+            cell.dataset.tip = "填入第 " + (i + 1) + " 名";
+            cell.onclick = () => {
+              // 长按抬起时的尾随 click：不当作放下
+              if (isTailClick(i)) return;
+              // 移动模式：点空格子也作为落点
+              if (dragFrom >= 0) {
+                if (dragFrom === i) { dropGrab(); render({ keepScroll: true }); toast("已取消移动", "·"); return; }
+                moveItem(dragFrom, i);
+                return;
+              }
+              selectedSlot = selectedSlot === i ? -1 : i;
+              replaceTarget = -1;
+              closePop();
+              render({ keepScroll: true });
+              toast(
+                selectedSlot >= 0
+                  ? `已选中第 ${i + 1} 名，点搜索结果填入`
+                  : "已取消选择",
+                selectedSlot >= 0 ? "⊙" : "·"
+              );
+            };
+          }
+
+          // 选中高亮
+          if (i === selectedSlot || i === replaceTarget) cell.classList.add("sel");
+
+          // 拖放（桌面）
+          cell.ondragover = (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          };
+          cell.ondrop = (e) => {
+            e.preventDefault();
+            const a = +e.dataTransfer.getData("text/plain");
+            moveItem(a, i);
+          };
+
+          // 长按进入移动模式（触屏友好）
+          bindLongPress(cell, i);
+
+          g.appendChild(cell);
+        }
+
+        $("cnt").textContent = filledCount() + " / " + MAX;
+        // 抓起状态：整格网提示可放置
+        g.classList.toggle("moving", dragFrom >= 0);
+        if (keepScroll !== null) window.scrollTo(0, keepScroll);
+      }
+
+      // 交换两个槽位（稀疏安全：任一侧可为空）
+      function moveItem(from, to) {
+        if (!(from >= 0) || isNaN(from) || from >= MAX) return;
+        const target = Math.min(Math.max(to, 0), MAX - 1);
+        if (target === from) {
+          dropGrab();
+          render({ keepScroll: true });
+          return;
+        }
+        if (!items[from]) { dropGrab(); return; }
+        while (items.length <= Math.max(from, target)) items.push(null);
+        const a = items[from];
+        const b = items[target];
+        items[target] = a;
+        items[from] = b; // 目标原内容挪到源位置（交换），保证不丢数据
+        dropGrab();
+        clearSelection();
+        save();
+        render({ keepScroll: true });
+        toast(b ? `已与第 ${target + 1} 名交换` : `已移到第 ${target + 1} 名`, "⇅");
+      }
+
+      // 长按 350ms 进入移动模式；之后点目标格子完成移动
+      function bindLongPress(cell, i) {
+        let timer = null;
+        let moved = false;
+        const start = () => {
+          if (!items[i]) return; // 空格子不触发长按拖拽
+          if (dragFrom >= 0) return; // 已在抓取中，不重复触发
+          moved = false;
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            if (moved) return;
+            dragFrom = i;
+            grabAt = Date.now();
+            cell.classList.add("dragging");
+            $("grid").classList.add("moving");
+            toast(`已抓起第 ${i + 1} 名，点目标格子放下`, "⇅");
+          }, 350);
+        };
+        const cancel = () => clearTimeout(timer);
+        cell.addEventListener("touchstart", start, { passive: true });
+        cell.addEventListener("touchmove", () => {
+          moved = true;
+          cancel();
+        }, { passive: true });
+        cell.addEventListener("touchend", cancel);
+        cell.addEventListener("mousedown", start);
+        cell.addEventListener("mouseup", cancel);
+        cell.addEventListener("mouseleave", cancel);
+        cell.addEventListener("contextmenu", (e) => {
+          // 移动端长按会弹系统菜单，抓起状态下屏蔽掉
+          if (dragFrom >= 0) e.preventDefault();
+        });
+      }
+
+      function jsonp(url) {
+        return new Promise((res, rej) => {
+          const cb = "cb" + Date.now(),
+            sc = document.createElement("script");
+          window[cb] = (d) => {
+            res(d);
+            sc.remove();
+            delete window[cb];
+          };
+          sc.onerror = () => {
+            rej(new Error("网络被拦截"));
+            sc.remove();
+          };
+          sc.src = url + "&callback=" + cb;
+          document.body.appendChild(sc);
+          setTimeout(() => rej(new Error("超时")), 10000);
+        });
+      }
+
+      async function apiGet(u) {
+        try {
+          const r = await fetch(u, { mode: "cors" });
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return await r.json();
+        } catch (e) {
+          return await jsonp(u);
+        }
+      }
+
+      async function search() {
+        const q = $("q").value.trim();
+        if (!q) return;
+
+        // 地区固定为美国（原地区下拉框已移除）
+        const cty = "us";
+        const NAME = { tw: "中国台湾", hk: "中国香港", sg: "新加坡", jp: "日本", us: "美国", gb: "英国" };
+        const BASE = "https://itunes.apple.com/";
+
+        $("msg").textContent = "搜索中…";
+        $("res").innerHTML = "";
+
+        const NOISE = /karaoke|instrumental|tribute|performs|piano dreamers|lullaby/i;
+
+        function norm(list) {
+          const seen = new Set();
+          return list
+            .filter((a) => a && a.collectionName && a.artworkUrl100)
+            .filter((a) => !NOISE.test(a.collectionName))
+            .filter((a) => {
+              const k = a.collectionName.trim().toLowerCase();
+              if (seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            })
+            .sort((a, b) => String(a.releaseDate || "").localeCompare(String(b.releaseDate || "")))
+            .map((a) => ({
+              name: String(a.collectionName).replace(/ - (Single|EP)$/, ""),
+              artist: String(a.artistName || ""),
+              src: String(a.artworkUrl100).replace("100x100bb", "600x600bb"),
+              thumb: String(a.artworkUrl100),
+              date: String(a.releaseDate || "").slice(0, 4),
+            }));
+        }
+
+        try {
+          let cards = [];
+          let head = "";
+          let artist = null;
+
+          try {
+            const s = await apiGet(BASE + "search?entity=musicArtist&limit=5&country=" + cty + "&term=" + encodeURIComponent(q));
+            if (s.resultCount) artist = s.results[0];
+          } catch (e) {}
+
+          if (artist) {
+            const d = await apiGet(BASE + "lookup?id=" + artist.artistId + "&entity=album&limit=200&country=" + cty);
+            const cols = (d.results || []).filter((x) => x.wrapperType === "collection" && (x.trackCount || 0) >= 4);
+            cards = norm(cols);
+            if (cards.length) head = artist.artistName + "　" + cards.length + " 张专辑 / EP";
+          }
+
+          if (!cards.length) {
+            const d = await apiGet(BASE + "search?entity=album&limit=30&country=" + cty + "&term=" + encodeURIComponent(q));
+            cards = norm(d.results || []);
+            if (cards.length) head = "「" + q + "」的搜索结果　" + cards.length + " 张";
+          }
+
+          if (!cards.length) {
+            $("msg").textContent = "在「" + NAME[cty] + "」库里没搜到。换个关键词试试，或用下方“手动添加”。";
+            return;
+          }
+
+          $("msg").textContent = head + "（当前地区：" + NAME[cty] + "）";
+
+          cards.forEach((c) => {
+            const b = document.createElement("button");
+            b.className = "c";
+            b.innerHTML = '<img loading="lazy" alt=""><div><b></b><span></span></div>';
+            b.querySelector("img").src = c.thumb;
+            b.querySelector("b").textContent = c.name;
+            b.querySelector("span").textContent = c.artist + (c.date ? "　" + c.date : "");
+            b.onclick = () => {
+              // 按压缩放动画
+              b.classList.remove("pulse");
+              void b.offsetWidth; // 强制重排以便重播动画
+              b.classList.add("pulse");
+              b.addEventListener("animationend", () => b.classList.remove("pulse"), { once: true });
+              add({ name: c.name, artist: c.artist, src: c.src });
+            };
+            $("res").appendChild(b);
+          });
+        } catch (e) {
+          $("msg").textContent = "搜索失败（" + (e.message || e) + "）。换个关键词重试，或用下方手动添加。";
+        }
+      }
+
+      $("go").onclick = search;
+      $("q").onkeydown = (e) => {
+        if (e.key === "Enter") search();
+      };
+
+      $("madd").onclick = () => {
+        const f = $("f").files[0], n = $("mn").value.trim(), a = $("ma").value.trim();
+        if (!f || !n) {
+          $("msg").textContent = "请选择图片并填写专辑名。";
+          return;
+        }
+        fileToSquare(f, (dataUrl) => {
+          if (!dataUrl) {
+            $("msg").textContent = "图片读取失败，请换一张。";
+            return;
+          }
+          add({ name: n, artist: a, src: dataUrl });
+          $("mn").value = "";
+          $("ma").value = "";
+          $("f").value = "";
+        });
+      };
+
+      // 替换用：上传图片替换选中的格子
+      $("rf").onchange = () => {
+        const f = $("rf").files[0];
+        const idx = replaceTarget;
+        if (!f || idx < 0) return;
+        fileToSquare(f, (dataUrl) => {
+          if (!dataUrl) {
+            toast("图片读取失败", "!");
+            return;
+          }
+          if (items[idx]) {
+            items[idx].src = dataUrl;
+            save();
+            render();
+            toast(`已替换第 ${idx + 1} 名的封面`, "↻");
+          } else {
+            // 目标槽已空：当作新增填入该名次
+            const keep = selectedSlot;
+            selectedSlot = idx;
+            add({ name: "自选封面", artist: "", src: dataUrl });
+            selectedSlot = keep;
+          }
+          clearSelection();
+          render();
+        });
+      };
+
+      // 点击空白处关闭菜单 / 取消选择 / 退出抓取
+      document.addEventListener("click", (e) => {
+        const p = $("pop");
+        if (!p.hidden && !p.contains(e.target) && !e.target.closest(".s")) closePop();
+        if (!e.target.closest(".s") && !e.target.closest(".pop") && dragFrom >= 0) {
+          dropGrab();
+          render({ keepScroll: true });
+          toast("已取消移动", "·");
+        }
+      });
+      // Esc 退出抓取 / 关闭菜单
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        if (!$("pop").hidden) { closePop(); return; }
+        if (dragFrom >= 0) {
+          dropGrab();
+          render({ keepScroll: true });
+          toast("已取消移动", "·");
+        }
+      });
+      window.addEventListener("scroll", () => {
+        if (!$("pop").hidden) closePop();
+      });
+
+      // ===== 背景墙随滚动逐层压暗（纯视觉，不改任何业务逻辑） =====
+      (function initVeil() {
+        const veil = $("veil");
+        if (!veil) return;
+        let raf = 0;
+        const apply = () => {
+          raf = 0;
+          // 滚动 120px 起步，到 460px 完全遮住背景墙
+          const y = window.scrollY || window.pageYOffset || 0;
+          const t = Math.max(0, Math.min(1, (y - 120) / 340));
+          veil.style.opacity = String(t * 0.96);
+        };
+        window.addEventListener(
+          "scroll",
+          () => {
+            if (!raf) raf = requestAnimationFrame(apply);
+          },
+          { passive: true }
+        );
+        apply();
+      })();
+
+      function fit(x, t, w) {
+        if (x.measureText(t).width <= w) return t;
+        while (t.length > 1 && x.measureText(t + "…").width > w) t = t.slice(0, -1);
+        return t + "…";
+      }
+
+      function load(src) {
+        return new Promise(async (resolve) => {
+          const timer = setTimeout(() => resolve(null), 6000); 
+          try {
+            const b = src.startsWith("data:")
+              ? await (await fetch(src)).blob()
+              : await (await fetch(src, { mode: "cors" })).blob();
+            const img = await createImageBitmap(b);
+            clearTimeout(timer);
+            resolve(img);
+          } catch (e) {
+            const im = new Image();
+            im.crossOrigin = "anonymous";
+            im.onload = () => { clearTimeout(timer); resolve(im); };
+            im.onerror = () => { clearTimeout(timer); resolve(null); };
+            im.src = src;
+          }
+        });
+      }
+
+      // ===== 排版引擎 =====
+      // 目标：阶梯式（前排大、后排小）、严格递增、总数守恒、无空洞
+      const LAY = { W: 2400, pad: 100, gap: 8, head: 280 };
+      LAY.cw = LAY.W - LAY.pad * 2;
+      const cellSize = (cols) => (LAY.cw - (cols - 1) * LAY.gap) / cols;
+      const strictInc = (a) => a.every((v, i) => i === 0 || v > a[i - 1]);
+
+      // 等比裁切绘制：保持 1:1 正方形且不变形（居中 cover）
+      function drawCover(ctx, img, dx, dy, size) {
+        const iw = img.width || img.naturalWidth;
+        const ih = img.height || img.naturalHeight;
+        if (!iw || !ih) {
+          ctx.fillStyle = "#333";
+          ctx.fillRect(dx, dy, size, size);
+          return;
+        }
+        const scale = Math.max(size / iw, size / ih);
+        const sw = size / scale;
+        const sh = size / scale;
+        const sx = (iw - sw) / 2;
+        const sy = (ih - sh) / 2;
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, size, size);
+      }
+
+      // 给定 行数R / 总数N / 相邻行缩放比k，生成严格递增且和为N的行数数组
+      function geomRows(R, N, k) {
+        let lo = 0.1, hi = N / R, C = 0;
+        for (let t = 0; t < 60; t++) {
+          C = (lo + hi) / 2;
+          let s = 0;
+          for (let i = 0; i < R; i++) s += Math.max(1, Math.round(C * Math.pow(k, i)));
+          if (s < N) lo = C; else hi = C;
+        }
+        for (const C0 of [C, (lo + hi) / 2, lo, hi]) {
+          const c = [];
+          for (let i = 0; i < R; i++) c.push(Math.max(1, Math.round(C0 * Math.pow(k, i))));
+          let d = N - c.reduce((a, b) => a + b, 0), guard = 0;
+          while (d > 0 && guard++ < 4000) {
+            for (let j = R - 1; j >= 0 && d > 0; j--) {
+              const cap = j === R - 1 ? Infinity : c[j + 1] - 1;
+              if (c[j] + 1 <= cap) { c[j]++; d--; }
+            }
+          }
+          while (d < 0 && guard++ < 8000) {
+            for (let j = 0; j < R && d < 0; j++) {
+              const floor = j === 0 ? 1 : c[j - 1] + 1;
+              if (c[j] - 1 >= floor) { c[j]--; d++; }
+            }
+          }
+          if (d === 0 && strictInc(c)) return c;
+        }
+        return null;
+      }
+
+      function layoutCost(c, N) {
+        const R = c.length;
+        const sz = c.map(cellSize);
+        const s0 = sz[0], s1 = sz[R - 1];
+        const ratio = s0 / s1;
+        let dev = 0;
+        for (let i = 1; i < R; i++) dev += Math.abs(Math.log(sz[i - 1] / sz[i]));
+        dev = R > 1 ? dev / (R - 1) : 0;
+        let varz = 0;
+        if (R > 2) {
+          const rs = [];
+          for (let i = 1; i < R; i++) rs.push(Math.log(sz[i - 1] / sz[i]));
+          const m = rs.reduce((a, b) => a + b, 0) / rs.length;
+          varz = Math.sqrt(rs.reduce((a, b) => a + (b - m) ** 2, 0) / rs.length);
+        }
+        let k = 0;
+        k += Math.abs(ratio - 2.25) * 4.0;              // 阶梯总陡度
+        k += Math.max(0, ratio - 3.4) * 7;              // 太陡
+        k += Math.max(0, 1.75 - ratio) * 12;            // 太平
+        k += varz * 6;                                  // 台阶不均匀
+        k += Math.max(0, dev - 0.3) * 10;               // 单级跳变过大
+        k += Math.max(0, 2 - c[0]) * (N >= 3 ? 9 : 0);  // 首行至少 2 个（否则一张占满整宽，画幅被拉成超长竖条）
+        k += Math.max(0, c[0] - 10) * 1.2;              // 首行别太多
+        k += s0 > 1000 ? (s0 - 1000) / 150 : 0;         // 首图别过大
+        k += s1 < 200 ? (200 - s1) / 40 : 0;            // 尾图别过小
+        const idealR = Math.max(2, Math.round(Math.sqrt(N) / 1.7));
+        k += Math.abs(R - idealR) * 1.6;
+
+        // 画幅比例约束：每行都铺满画布宽度，行数少时整幅会变成超宽横条。
+        // 让成品尽量落在 3:2 ~ 4:5 的舒服区间，避免 N 相邻却一个偏方一个偏条。
+        const H = LAY.head + LAY.pad + sz.reduce((a, h) => a + h + LAY.gap, -LAY.gap);
+        const shape = H / LAY.W;               // 高/宽
+        k += Math.max(0, 0.62 - shape) * 26;   // 太扁（横条）
+        k += Math.max(0, shape - 1.15) * 14;   // 太高（竖条）
+        return k;
+      }
+
+      // 返回每一行的列数数组，sum === N
+      function planRows(N) {
+        if (N <= 0) return [];
+        let best = null;
+        for (let R = 1; R <= Math.min(N, 8); R++) {
+          for (const k of [1.05, 1.09, 1.13, 1.17, 1.21, 1.26, 1.32, 1.4, 1.5]) {
+            const c = geomRows(R, N, k);
+            if (!c || c.length !== R) continue;
+            const sc = layoutCost(c, N);
+            if (!best || sc < best.sc) best = { c, sc };
+          }
+        }
+        return best ? best.c : [N];
+      }
+
+      // 全局缓存，避免重复寻优
+      const planCache = new Map();
+      const plan = (N) => {
+        if (!planCache.has(N)) planCache.set(N, planRows(N));
+        return planCache.get(N);
+      };
+
+      // ===== 正方形网格：N 为完全平方数时，排成 √N × √N =====
+      // 用函数声明（会被提升）：render() 在模块初始化早期就可能被调用
+      function isPerfectSquare(n) {
+        if (n < 1) return false;
+        const r = Math.round(Math.sqrt(n));
+        return r * r === n;
+      }
+
+      // 返回 { mode, counts, head, gap, pad, W, H }
+      // mode = "square"：等大方块网格，画幅为正方形；mode = "stair"：阶梯
+      function buildLayout(N, textMode, layoutPref) {
+        const autoSquare = isPerfectSquare(N);
+        const useSquare =
+          layoutPref === "square" ? true : layoutPref === "stair" ? false : autoSquare;
+
+        if (useSquare) {
+          const side = Math.round(Math.sqrt(N));
+          const gap = 8;
+          const textModeOn = !!textMode;
+          const L = 2400; // 目标正方形边长
+
+          // 结构的核心：标题块紧贴网格上方（不随格子尺寸变化），
+          // 剩余空间平均分给上下留白 —— 这样无论 N 多大，视觉重心都是居中的。
+          const TB = 200;   // 标题区总高：题名 + 副题 + 到网格的间距
+          const PREF = 110; // 参考上下留白
+          // 网格目标高度
+          const gridTarget = L - PREF * 2 - TB;
+
+          const fontOf = (s) => Math.max(11, Math.min(26, s * 0.075));
+          const rowHOf = (s) => s + (textModeOn ? fontOf(s) * 2.6 : 0);
+          const gridHOf = (s) => side * rowHOf(s) + (side - 1) * gap;
+
+          // 二分求 s，使网格高度恰好为 gridTarget（随 s 单调递增）
+          let lo = 20, hi = L, s = 100;
+          for (let t = 0; t < 90; t++) {
+            s = (lo + hi) / 2;
+            if (gridHOf(s) < gridTarget) lo = s; else hi = s;
+          }
+          s = lo; // 保守取小者，保证不超高
+
+          const f = fontOf(s);
+          const rowH = rowHOf(s);
+          const gridW = side * s + (side - 1) * gap;
+          const gridH = gridHOf(s);
+
+          // 上下留白完全对称，画幅严格 2400×2400
+          const padY = (L - TB - gridH) / 2;
+          // 横向：格子为正方形，多余宽度作为左右边距
+          const padX = (L - gridW) / 2;
+
+          return {
+            mode: "square",
+            side,
+            counts: new Array(side).fill(side),
+            s,
+            gap,
+            pad: padX,
+            padY,
+            contentLeft: padX,
+            W: L,
+            H: L,
+            head: padY + TB,
+            baseFont: f,
+            cap: textModeOn ? f * 2.6 : 0,
+            textMode: textModeOn,
+            titleY: padY + 78,
+            subY: padY + 144,
+          };
+        }
+        // 阶梯
+        const counts = plan(N);
+        const rowHeights = counts.map(cellSize);
+        const textModeOn = !!textMode;
+        const minCell = Math.min(...rowHeights);
+        const baseFont = Math.max(11, Math.min(26, minCell * 0.075));
+        const cap = textModeOn ? baseFont * 2.6 : 0;
+        let H = LAY.head + LAY.pad;
+        rowHeights.forEach((h) => (H += h + cap + LAY.gap));
+        H -= LAY.gap;
+        return {
+          mode: "stair",
+          counts,
+          sizes: rowHeights,
+          gap: LAY.gap,
+          pad: LAY.pad,
+          padY: LAY.pad,
+          W: LAY.W,
+          H: Math.round(H),
+          head: LAY.head,
+          titleY: LAY.pad + 60,
+          subY: LAY.pad + 120,
+          baseFont,
+          cap,
+          textMode: textModeOn,
+        };
+      }
+
+      $("gen").onclick = async () => {
+        // 只对已填格子出图；稀疏空位不参与排版
+        const pick = filled();
+        if (!pick.length) {
+          $("warn").textContent = "先添加几张专辑。";
+          return;
+        }
+
+        $("warn").textContent = "正在计算完美排版...";
+
+        const showInfo = $("showInfo").value === "1";
+        const layoutPref = $("layoutSel").value;
+        const total = pick.length;
+        const L = buildLayout(total, showInfo, layoutPref);
+
+        const W = L.W, pad = L.pad, padY = L.padY || L.pad, gap = L.gap;
+        const baseFont = L.baseFont;
+        const cap = L.textMode ? baseFont * 2.6 : 0;
+
+        const cv = $("cv");
+        cv.width = W;
+        cv.height = L.H;
+        const x = cv.getContext("2d");
+
+        x.fillStyle = "#111111";
+        x.fillRect(0, 0, W, L.H);
+
+        // 标题与作者：位置由布局给出，保证方形画幅下也不贴边
+        const titleY = L.titleY || padY + 60;
+        const subY = L.subY || padY + 120;
+        x.fillStyle = "#ffffff";
+        x.font = 'bold 80px -apple-system, "Helvetica Neue", sans-serif';
+        x.textBaseline = "alphabetic";
+        const titleText = $("title").value.trim() || "Top Albums of My Life";
+        x.fillText(titleText.toUpperCase(), L.contentLeft !== undefined ? L.contentLeft : L.padY, titleY);
+
+        const authorText = $("author").value.trim();
+        if (authorText) {
+          x.fillStyle = "#aaaaaa";
+          x.font = '400 36px -apple-system, "Helvetica Neue", sans-serif';
+          x.fillText("by " + authorText, L.contentLeft !== undefined ? L.contentLeft : L.padY, subY);
+        }
+
+        let loadedCount = 0;
+        const imgs = [];
+        for (const it of pick) {
+          $("warn").textContent = `正在加载封面：${loadedCount + 1} / ${pick.length}`;
+          imgs.push(await load(it.src));
+          loadedCount++;
+        }
+
+        $("warn").textContent = "正在绘制最终海报...";
+        let miss = 0;
+        let y = L.head;
+        let itemIndex = 0;
+
+        for (let r = 0; r < L.counts.length; r++) {
+          const cCount = L.counts[r];
+          const s = L.mode === "square" ? L.s : L.sizes[r];
+          // 每行水平居中，保证左右留白对称
+          const rowW = cCount * s + (cCount - 1) * gap;
+          const x0 = (W - rowW) / 2; // 始终相对画幅水平居中
+
+          for (let c = 0; c < cCount; c++) {
+            const cx = x0 + c * (s + gap);
+            const cy = y;
+            const it = pick[itemIndex];
+            const img = imgs[itemIndex];
+
+            if (img) {
+              drawCover(x, img, cx, cy, s);
+            } else {
+              miss++;
+              x.fillStyle = "#333";
+              x.fillRect(cx, cy, s, s);
+            }
+
+            if (L.textMode) {
+              x.fillStyle = "#e0e0e0";
+              x.font = `500 ${baseFont}px -apple-system, "PingFang SC", sans-serif`;
+              x.textBaseline = "alphabetic";
+              x.fillText(fit(x, it.name, s), cx, cy + s + baseFont * 1.5);
+
+              x.fillStyle = "#888888";
+              x.font = `400 ${baseFont * 0.82}px -apple-system, "PingFang SC", sans-serif`;
+              x.fillText(fit(x, it.artist, s), cx, cy + s + baseFont * 2.5);
+            }
+            itemIndex++;
+          }
+          y += s + cap + gap;
+        }
+
+        cv.style.display = "block";
+        $("dl").style.display = "";
+        const modeTip = L.mode === "square" ? `方形网格 ${L.side}×${L.side}` : "阶梯排版";
+        $("warn").textContent = miss
+          ? `完成（${modeTip}）！但 ${miss} 张封面加载失败（显示为灰块）。`
+          : `生成完成（${modeTip}）！长按图片保存或点击下载。`;
+      };
+
+      $("dl").onclick = () => $("cv").toBlob((b) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(b);
+          a.download = "my-top-albums.png";
+          a.click();
+        });
+
+      $("clr").onclick = () => {
+        if (confirm("清空列表？")) {
+          items = [];
+          save();
+          render();
+          $("cv").style.display = "none";
+          $("dl").style.display = "none";
+          $("warn").textContent = "";
+        }
+      };
+    </script>
+
+    <!-- 背景墙动效开关：系统禁用了动效时给出提示并提供一键开启 -->
+    <script>
+      (function motionSwitch() {
+        var KEY = "wallMotionOn";
+        var html = document.documentElement;
+        var tip = document.getElementById("motionTip");
+        if (!tip) return;
+
+        var mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+        // 用户此前主动开启过，就保持
+        if (localStorage.getItem(KEY) === "1") html.setAttribute("data-motion", "on");
+
+        // 不看媒体查询的「声明」，而是实测动画是否真的在推进 ——
+        // 有些环境（节能模式 / 远程桌面 / 无 GPU 合成层）会让动画
+        // 声明为 running 却不真正前进，只有采样位置才能发现。
+        function sync() {
+          var forced = html.getAttribute("data-motion") === "on";
+          if (forced) { tip.hidden = true; return; }
+
+          var el = document.querySelector(".wt");
+          if (!el) { tip.hidden = true; return; }
+
+          var cs = getComputedStyle(el);
+          // 声明层面就被关掉了，不用再采样
+          if (cs.animationName === "none" || cs.animationPlayState === "paused") {
+            showTip();
+            return;
+          }
+
+          // 声明是运行中，采样一次确认真的在动
+          var a = el.getBoundingClientRect().left;
+          setTimeout(function () {
+            var b = el.getBoundingClientRect().left;
+            // 90s 走完 50% 宽度，400ms 约移动 7-8px；留 0.4px 容差
+            if (Math.abs(a - b) > 0.4) discardTip();
+            else showTip();
+          }, 400);
+        }
+
+        // 提示条只在页面顶部露出，滚下去就收起 —— 避免挡住网格与按钮
+        function placeTip() {
+          if (tip.hidden) return;
+          tip.classList.toggle("dim", window.scrollY > 160);
+        }
+        function showTip() {
+          tip.hidden = false;
+          placeTip();
+        }
+        function discardTip() {
+          tip.hidden = true;
+        }
+        window.addEventListener("scroll", placeTip, { passive: true });
+
+        tip.addEventListener("click", function () {
+          html.setAttribute("data-motion", "on");
+          localStorage.setItem(KEY, "1");
+          document.querySelectorAll(".wt").forEach(function (el) {
+            el.style.animationPlayState = "running";
+          });
+          sync();
+        });
+
+        if (mq.addEventListener) mq.addEventListener("change", sync);
+        else if (mq.addListener) mq.addListener(sync);
+
+        // 等封面渲染完再判断一次，避免在骨架阶段误判
+        window.addEventListener("load", function () {
+          sync();
+          setTimeout(sync, 600);
+        });
+        sync();
+      })();
+    </script>
+  </body>
+</html>
