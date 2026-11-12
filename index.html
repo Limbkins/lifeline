@@ -4,12 +4,58 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Lifeline · 用专辑拼出你的人生坐标</title>
+
+    <!-- ==========================================================
+         字体（海报渲染用）
+         英文字体用 fontsource 的 woff2 子集，体积小、加载快；
+         中文三款字库动辄 1MB+，改为「选中时才 preload」的懒加载，
+         见下方 loadPosterFont()，首屏不受影响。
+         ========================================================== -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/bebas-neue@5/400.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5/800.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/darker-grotesque@5/800.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/nunito@5/800.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/boldonse@5/400.css" />
+    <!-- 思源黑体 Heavy（Noto Sans SC 900）
+         CSS 有 100+ 个 @font-face 分片，gzip 后约 31KB；
+         字体文件本身按 unicode-range 分片，只有画到的字才下载对应分片。 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5/900.css" />
+
     <style>
 /* ==========================================================================
          Lifeline — 纯视觉升级（强制深色 / 背景墙 / 毛玻璃）
          结构钩子保持不变：.c .pulse .s .sel .dragging .moving .grid
                           .pop .toast .res .msg .bar .act .capbar
          ========================================================================== */
+
+      /* ====================== 中文字体 @font-face ======================
+         得意黑 Smiley Sans（SIL OFL）：官方仓库的 ttf/woff2 直链
+         阿里妈妈数黑体（免费商用）：fontpkg 的 woff2
+         思源黑体 Heavy：用 Noto Sans SC 900（同源同一字体族）
+         它们都在 600KB~1.2MB，只声明不触发下载 —— 浏览器直到
+         某个元素真的用到该 family 才发请求，所以声明放在这里零成本。
+         ================================================================ */
+      @font-face {
+        font-family: "Smiley Sans";
+        src: url("https://cdn.jsdelivr.net/npm/@fontpkg/smiley-sans@2.0.4/SmileySans-Oblique.ttf.woff2")
+          format("woff2");
+        font-weight: 400 900;
+        /* 注意：必须声明为 normal。得意黑的字形本身就是倾斜设计（文件名带 Oblique），
+           若这里写 `font-style: oblique 0deg 12deg`，canvas 用默认 normal 就匹配不上，
+           字体会静默回落到系统字体 —— 表现就是「选了没变化」。 */
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Alimama ShuHeiTi";
+        src: url("https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.woff2")
+          format("woff2");
+        font-weight: 700 900;
+        font-display: swap;
+      }
+      /* 思源黑体 Heavy —— 用 Google/Fontsource 的 Noto Sans SC 900 分片子集，
+         按 unicode-range 自动只下用到的那几片（见 head 里的 link） */
       :root {
         color-scheme: dark;
 
@@ -774,6 +820,56 @@
         margin-top: 12px;
       }
 
+      /* ====================== 画布容器 + 加载遮罩 ====================== */
+      .cv-wrap {
+        position: relative;
+      }
+
+      .veil {
+        position: absolute;
+        inset: 12px 0 0; /* 与 canvas 的 margin-top 对齐，正好盖住画布 */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        border-radius: 10px;
+        background: rgba(10, 10, 12, 0.62);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        backdrop-filter: blur(18px) saturate(140%);
+        opacity: 0;
+        transition: opacity 0.32s ease;
+        pointer-events: none;
+      }
+      .veil[hidden] {
+        display: none;
+      }
+      .veil.on {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .veil p {
+        margin: 0;
+        font-size: 13.5px;
+        letter-spacing: 0.04em;
+        color: #d8d8de;
+      }
+
+      /* 旋转加载圈 */
+      .spinner {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.16);
+        border-top-color: #ffffff;
+        animation: spin 0.82s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       /* 长按保存用的镜像图：只在触摸设备显示（桌面端有下载按钮，无需重复） */
       #saveImg {
         display: none;
@@ -1044,6 +1140,28 @@
       </select>
     </div>
 
+    <!-- 主题与字体（改动即重绘，无需再点生成） -->
+    <div class="bar" style="margin-top: 12px; align-items: center; justify-content: center;">
+      <label style="font-size: 14px; color: var(--mute); margin-right: 5px;">背景主题：</label>
+      <select id="themeSel" style="flex: none; padding-left: 12px;">
+        <option value="dark" selected>深邃黑</option>
+        <option value="light">极简白</option>
+        <option value="glass">毛玻璃质感</option>
+      </select>
+      <label style="font-size: 14px; color: var(--mute); margin: 0 5px 0 12px;">标题字体：</label>
+      <select id="fontSel" style="flex: none; padding-left: 12px;">
+        <option value="system" selected>系统默认</option>
+        <option value="smiley">得意黑</option>
+        <option value="alimama">阿里妈妈数黑体</option>
+        <option value="noto">思源黑体 Heavy</option>
+        <option value="bebas">Bebas Neue</option>
+        <option value="montserrat">Montserrat</option>
+        <option value="darker">Darker Grotesque</option>
+        <option value="nunito">Nunito</option>
+        <option value="boldonse">Boldonse</option>
+      </select>
+    </div>
+
     <!-- 按钮区（居中） -->
     <div class="act">
       <button class="p" id="gen">生成图片</button>
@@ -1051,9 +1169,19 @@
       <button id="clr">清空</button>
     </div>
     <div id="warn" class="msg" style="text-align: center;"></div>
-    <canvas id="cv"></canvas>
-    <!-- 镜像图：canvas 不能长按保存，触摸设备上改显示这张真实 <img> -->
-    <img id="saveImg" alt="生成的海报，长按可保存到相册" />
+
+    <!-- 画布容器：相对定位，用于承载加载遮罩 -->
+    <div class="cv-wrap">
+      <canvas id="cv"></canvas>
+      <!-- 镜像图：canvas 不能长按保存，触摸设备上改显示这张真实 <img> -->
+      <img id="saveImg" alt="生成的海报，长按可保存到相册" />
+      <!-- 首次生成 / 内容变动后重绘时才出现；改主题字体属于「即选即看」，不显示 -->
+      <!-- 注意 id 不能叫 veil：页面顶部已有一个滚动渐变遮罩用了 #veil -->
+      <div id="drawVeil" class="veil" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>正在绘制海报...</p>
+      </div>
+    </div>
     <p id="saveTip" class="save-tip">长按上方图片 → 存储到照片</p>
 
       <!-- ====================== 页脚 ====================== -->
@@ -1965,9 +2093,18 @@
         return t + "…";
       }
 
+      // ===== 图片内存缓存 =====
+      // 即选即看的核心：改主题/字体时不重新下载封面，直接从 Map 里取。
+      // 值为 Promise（而不是已完成的 Image），这样并发请求同一张图只会发一次。
+      const imageCache = new Map();
+
       function load(src) {
-        return new Promise(async (resolve) => {
-          const timer = setTimeout(() => resolve(null), 6000); 
+        if (!src) return Promise.resolve(null);
+        const hit = imageCache.get(src);
+        if (hit) return hit;
+
+        const p = new Promise(async (resolve) => {
+          const timer = setTimeout(() => resolve(null), 6000);
           try {
             const b = src.startsWith("data:")
               ? await (await fetch(src)).blob()
@@ -1983,6 +2120,10 @@
             im.src = src;
           }
         });
+        imageCache.set(src, p);
+        // 加载失败的结果不留缓存，下次重绘还有机会重试
+        p.then((v) => { if (!v) imageCache.delete(src); });
+        return p;
       }
 
       // ===== 排版引擎 =====
@@ -2195,111 +2336,371 @@
         };
       }
 
-      $("gen").onclick = async () => {
-        // 只对已填格子出图；稀疏空位不参与排版
+      // ===== 背景主题 =====
+      // 每个主题给出一整套配色，白底时专辑文字/作者必须自动转深色，
+      // 否则会糊成一片看不见。draw 是"额外的背景绘制"钩子（毛玻璃用）。
+      const themes = {
+        dark: {
+          bg: "#111111",
+          titleColor: "#ffffff",
+          authorColor: "#aaaaaa",
+          albumTextColor: "#e0e0e0",
+          albumArtistColor: "#888888",
+          emptyCell: "#2a2a2d",
+        },
+        light: {
+          bg: "#f5f5f5",
+          titleColor: "#111111",
+          authorColor: "#6b6b6b",
+          albumTextColor: "#1a1a1a",
+          albumArtistColor: "#7a7a7a",
+          emptyCell: "#dcdcdc",
+        },
+        glass: {
+          bg: "#0a0a0c",
+          titleColor: "#ffffff",
+          authorColor: "#b9b9c4",
+          albumTextColor: "#e4e4ea",
+          albumArtistColor: "#9a9aa6",
+          emptyCell: "#242428",
+        },
+      };
+
+      // ===== 标题字体 =====
+      // stack 里把中文可用字体排在前面，英文名字（Bebas/Montserrat…）
+      // 缺中文字符时会自动回落到后面的系统中文字体，不会出豆腐块。
+      const SYS_CN = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC"';
+      const fonts = {
+        system: { stack: `-apple-system, "Helvetica Neue", ${SYS_CN}, sans-serif`, weight: 800 },
+        smiley: { stack: `"Smiley Sans", ${SYS_CN}, sans-serif`, weight: 400 },
+        alimama: { stack: `"Alimama ShuHeiTi", ${SYS_CN}, sans-serif`, weight: 900 },
+        noto: { stack: `"Noto Sans SC", ${SYS_CN}, sans-serif`, weight: 900 },
+        bebas: { stack: `"Bebas Neue", ${SYS_CN}, sans-serif`, weight: 400 },
+        montserrat: { stack: `"Montserrat", ${SYS_CN}, sans-serif`, weight: 800 },
+        darker: { stack: `"Darker Grotesque", ${SYS_CN}, sans-serif`, weight: 800 },
+        nunito: { stack: `"Nunito", ${SYS_CN}, sans-serif`, weight: 800 },
+        boldonse: { stack: `"Boldonse", ${SYS_CN}, sans-serif`, weight: 400 },
+      };
+
+      // 中文字库体积大（得意黑 1.15MB、阿里妈妈 594KB、思源 100+ 分片），
+      // 只有用户真的选了才去 fetch；这里用 FontFace API 精确控制加载时机。
+      const FONT_URLS = {
+        "Smiley Sans":
+          "https://cdn.jsdelivr.net/npm/@fontpkg/smiley-sans@2.0.4/SmileySans-Oblique.ttf.woff2",
+        "Alimama ShuHeiTi":
+          "https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.woff2",
+      };
+      const fontJobs = new Map();
+      /**
+       * 确保字体可用于 canvas 绘制。
+       * 注意：document.fonts.check() 对「按 unicode-range 分片」的字体
+       * （思源黑体就是 101 个分片）不可靠 —— 分片未下载时它会返回 false，
+       * 即使字体声明完全正常。所以统一用 fonts.load(font, sampleText) 主动拉取，
+       * 它只下载 sampleText 命中的那几个分片，比整包快得多。
+       */
+      function ensureFont(key, sampleText) {
+        const sample = sampleText || "Top Albums of My Life 中文专辑";
+        const weightOf = {
+          smiley: 400, alimama: 900, noto: 900,
+          bebas: 400, boldonse: 400, montserrat: 800, darker: 800, nunito: 800,
+        };
+        // 去掉引号的 family 名，fonts.load 和 @font-face 都要能对上
+        const famRaw = (fonts[key] && fonts[key].stack || "").split(",")[0].trim().replace(/^["']|["']$/g, "");
+        if (!famRaw || famRaw === "-apple-system") return Promise.resolve(); // 系统字体无需等待
+
+        const weight = weightOf[key] || 400;
+        const jobKey = famRaw + "|" + weight;
+        if (fontJobs.has(jobKey)) return fontJobs.get(jobKey);
+
+        const job = new Promise((resolve) => {
+          let settled = false;
+          const done = () => { if (!settled) { settled = true; resolve(); } };
+          // 关键：必须显式 fonts.load 才会去下载字体文件。
+          // 光等 document.fonts.ready 是不够的 —— 它只等「已开始的」加载，
+          // 而字体要等第一次真正绘制时才懒加载，于是首帧就用回退字画了。
+          document.fonts
+            .load(`${weight} 80px "${famRaw}"`, sample)
+            .then((faces) => {
+              if (faces && faces.length) return done();
+              return loadByApi(famRaw, key).then(done);
+            })
+            .catch(() => loadByApi(famRaw, key).then(done));
+          // 兜底超时：网络太差也不卡住出图
+          setTimeout(done, 5000);
+        });
+        fontJobs.set(jobKey, job);
+        return job;
+      }
+
+      // 兜底：直接用二进制构造 FontFace（仅中文字库有直链可用）
+      function loadByApi(fam, key) {
+        const url = FONT_URLS[fam];
+        if (!url) return Promise.resolve();
+        return new FontFace(fam, `url("${url}")`, {
+          weight: key === "alimama" ? "900" : "400",
+          display: "swap",
+        })
+          .load()
+          .then((f) => document.fonts.add(f))
+          .catch(() => {});
+      }
+
+      // 主题背景：毛玻璃用极暗底色 + 多组径向渐变模拟光斑
+      function paintBackground(ctx, W, H, themeKey) {
+        if (themeKey !== "glass") {
+          ctx.fillStyle = themes[themeKey].bg;
+          ctx.fillRect(0, 0, W, H);
+          return;
+        }
+        const base = ctx.createLinearGradient(0, 0, W, H);
+        base.addColorStop(0, "#1d1d33");
+        base.addColorStop(0.45, "#0c0c12");
+        base.addColorStop(1, "#231a2b");
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, W, H);
+
+        // 三团柔光，位置不同、色相微差，叠出玻璃后的折射感。
+        // 浓度必须够：海报最终是按 1/4 甚至更小缩略看，太淡就等同纯黑。
+        const blobs = [
+          { x: W * 0.15, y: H * 0.08, r: W * 0.62, c: "rgba(96,120,255,0.42)" },
+          { x: W * 0.92, y: H * 0.26, r: W * 0.55, c: "rgba(255,96,180,0.34)" },
+          { x: W * 0.48, y: H * 1.0, r: W * 0.70, c: "rgba(80,240,205,0.26)" },
+          { x: W * 0.05, y: H * 0.75, r: W * 0.42, c: "rgba(140,90,255,0.28)" },
+        ];
+        for (const b of blobs) {
+          const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+          g.addColorStop(0, b.c);
+          g.addColorStop(0.55, b.c.replace(/[\d.]+\)$/, "0.09)"));
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, W, H);
+        }
+
+        // 顶部一道极淡的玻璃高光，模拟受光面
+        const gloss = ctx.createLinearGradient(0, 0, 0, H * 0.42);
+        gloss.addColorStop(0, "rgba(255,255,255,0.13)");
+        gloss.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = gloss;
+        ctx.fillRect(0, 0, W, H * 0.42);
+
+        // 细噪点打散渐变的色带（很淡，只为质感）
+        ctx.save();
+        ctx.globalAlpha = 0.055;
+        for (let i = 0; i < 3200; i++) {
+          const px = Math.random() * W;
+          const py = Math.random() * H;
+          const r = Math.random() * 2.4 + 0.6;
+          ctx.fillStyle = Math.random() > 0.5 ? "#ffffff" : "#000000";
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // ===== 渲染状态 =====
+      // hasRendered：画布上是否已有内容（决定改下拉框时是否自动重绘）
+      // posterData：上一次绘制用的快照，即选即看时直接复用，不再重新下载封面
+      let hasRendered = false;
+      let posterData = null; // { pick, imgs, L, miss }
+      let redrawTimer = null;
+
+      // ===== 加载遮罩 =====
+      let veilShownAt = 0;
+      const VEIL_MIN_MS = 520; // 最短显示时长
+
+      function showVeil() {
+        const v = $("drawVeil");
+        if (!v) return;
+        veilShownAt = performance.now();
+        v.hidden = false;
+        void v.offsetWidth; // 强制回流，否则 transition 不触发
+        v.classList.add("on");
+      }
+
+      function hideVeil() {
+        const v = $("drawVeil");
+        if (!v || v.hidden) return;
+        // 渲染太快（实测 16 张封面只要 ~100ms）时遮罩会一闪而过，
+        // 观感更像"闪屏抖动"而不是"加载"。压到最短 520ms 再淡出，
+        // 反而更沉稳；真正的重绘（图像下载）耗时远超这个值，不会造成延迟感。
+        const wait = Math.max(0, VEIL_MIN_MS - (performance.now() - veilShownAt));
+        setTimeout(() => {
+          v.classList.remove("on");
+          setTimeout(() => {
+            if (!v.classList.contains("on")) v.hidden = true;
+          }, 340);
+        }, wait);
+      }
+
+      /**
+       * 绘制海报
+       * @param {boolean} isFirstTime
+       *   true  = 首次生成 / 专辑变动后重新生成 → 显示遮罩、加载封面
+       *   false = 改主题/字体/布局触发的「即选即看」→ 无遮罩、纯内存重绘
+       */
+      async function renderPoster(isFirstTime) {
         const pick = filled();
         if (!pick.length) {
           $("warn").textContent = "先添加几张专辑。";
+          hideVeil();
           return;
         }
 
-        $("warn").textContent = "正在计算完美排版...";
+        const themeKey = $("themeSel").value;
+        const fontKey = $("fontSel").value;
+        const theme = themes[themeKey] || themes.dark;
 
-        const showInfo = $("showInfo").value === "1";
-        const layoutPref = $("layoutSel").value;
-        const total = pick.length;
-        const L = buildLayout(total, showInfo, layoutPref);
-
-        const W = L.W, pad = L.pad, padY = L.padY || L.pad, gap = L.gap;
-        const baseFont = L.baseFont;
-        const cap = L.textMode ? baseFont * 2.6 : 0;
-
-        const cv = $("cv");
-        cv.width = W;
-        cv.height = L.H;
-        const x = cv.getContext("2d");
-
-        x.fillStyle = "#111111";
-        x.fillRect(0, 0, W, L.H);
-
-        // 标题与作者：位置由布局给出，保证方形画幅下也不贴边
-        const titleY = L.titleY || padY + 60;
-        const subY = L.subY || padY + 120;
-        x.fillStyle = "#ffffff";
-        x.font = 'bold 80px -apple-system, "Helvetica Neue", sans-serif';
-        x.textBaseline = "alphabetic";
-        const titleText = $("title").value.trim() || "Top Albums of My Life";
-        x.fillText(titleText.toUpperCase(), L.contentLeft !== undefined ? L.contentLeft : L.padY, titleY);
-
-        const authorText = $("author").value.trim();
-        if (authorText) {
-          x.fillStyle = "#aaaaaa";
-          x.font = '400 36px -apple-system, "Helvetica Neue", sans-serif';
-          x.fillText("by " + authorText, L.contentLeft !== undefined ? L.contentLeft : L.padY, subY);
+        if (isFirstTime) {
+          showVeil();
+          $("warn").textContent = "正在计算完美排版...";
         }
 
-        let loadedCount = 0;
-        const imgs = [];
-        for (const it of pick) {
-          $("warn").textContent = `正在加载封面：${loadedCount + 1} / ${pick.length}`;
-          imgs.push(await load(it.src));
-          loadedCount++;
-        }
+        try {
+          // 字体：中文字库按需拉取；document.fonts.ready 确保 canvas 拿到真字体
+          // （否则第一次绘制会用回落的系统字体，字重差异很明显）
+          // 传入标题/作者文字，让分片字体只下载真正要画的那些字
+          const titleTxt = $("title").value.trim() || "Top Albums of My Life";
+          const authorTxt = $("author").value.trim();
+          await ensureFont(fontKey, titleTxt + " by " + authorTxt + " 0123456789");
+          try {
+            await document.fonts.ready;
+          } catch (e) {}
 
-        $("warn").textContent = "正在绘制最终海报...";
-        let miss = 0;
-        let y = L.head;
-        let itemIndex = 0;
+          const showInfo = $("showInfo").value === "1";
+          const layoutPref = $("layoutSel").value;
+          const total = pick.length;
+          const L = buildLayout(total, showInfo, layoutPref);
 
-        for (let r = 0; r < L.counts.length; r++) {
-          const cCount = L.counts[r];
-          const s = L.mode === "square" ? L.s : L.sizes[r];
-          // 每行水平居中，保证左右留白对称
-          const rowW = cCount * s + (cCount - 1) * gap;
-          const x0 = (W - rowW) / 2; // 始终相对画幅水平居中
-
-          for (let c = 0; c < cCount; c++) {
-            const cx = x0 + c * (s + gap);
-            const cy = y;
-            const it = pick[itemIndex];
-            const img = imgs[itemIndex];
-
-            if (img) {
-              drawCover(x, img, cx, cy, s);
-            } else {
-              miss++;
-              x.fillStyle = "#333";
-              x.fillRect(cx, cy, s, s);
+          // 图片：首次走网络 + 写入 imageCache；即选即看时全部命中缓存
+          let imgs;
+          if (isFirstTime || !posterData) {
+            imgs = [];
+            for (let i = 0; i < pick.length; i++) {
+              $("warn").textContent = `正在加载封面：${i + 1} / ${pick.length}`;
+              imgs.push(await load(pick[i].src));
             }
-
-            if (L.textMode) {
-              x.fillStyle = "#e0e0e0";
-              x.font = `500 ${baseFont}px -apple-system, "PingFang SC", sans-serif`;
-              x.textBaseline = "alphabetic";
-              x.fillText(fit(x, it.name, s), cx, cy + s + baseFont * 1.5);
-
-              x.fillStyle = "#888888";
-              x.font = `400 ${baseFont * 0.82}px -apple-system, "PingFang SC", sans-serif`;
-              x.fillText(fit(x, it.artist, s), cx, cy + s + baseFont * 2.5);
-            }
-            itemIndex++;
+          } else {
+            imgs = await Promise.all(pick.map((it) => load(it.src)));
           }
-          y += s + cap + gap;
-        }
 
-        cv.style.display = "block";
-        $("dl").style.display = "";
-        // iOS Safari 忽略 <a download>，canvas 元素本身也不支持长按保存。
-        // 生成后把画布内容镜像成一张真实 <img>：触摸设备上显示它（可长按存入相册），
-        // 桌面端保持 canvas + 下载按钮不变。
-        syncSaveImg(cv);
-        const modeTip = L.mode === "square" ? `方形网格 ${L.side}×${L.side}` : "阶梯排版";
-        $("warn").textContent = miss
-          ? `完成（${modeTip}）！但 ${miss} 张封面加载失败（显示为灰块）。`
-          : IS_TOUCH
-            ? `生成完成（${modeTip}）！长按上方图片即可存入相册。`
-            : `生成完成（${modeTip}）！点击下载图片。`;
-      };
+          const W = L.W;
+          const padY = L.padY || L.pad;
+          const gap = L.gap;
+          const baseFont = L.baseFont;
+          const cap = L.textMode ? baseFont * 2.6 : 0;
+          const fontDef = fonts[fontKey] || fonts.system;
+
+          const cv = $("cv");
+          cv.width = W;
+          cv.height = L.H;
+          const x = cv.getContext("2d");
+
+          // 背景（毛玻璃主题在这里叠加渐变与光斑）
+          paintBackground(x, W, L.H, themeKey);
+
+          // 标题与作者：位置由布局给出，保证方形画幅下也不贴边
+          const titleY = L.titleY || padY + 60;
+          const subY = L.subY || padY + 120;
+          const leftX = L.contentLeft !== undefined ? L.contentLeft : L.padY;
+
+          x.textBaseline = "alphabetic";
+          x.fillStyle = theme.titleColor;
+          x.font = `${fontDef.weight} 80px ${fontDef.stack}`;
+          // 只有全大写的拉丁展示字体才转大写；中文标题转了没意义
+          const isLatinCaps =
+            fontKey === "bebas" || fontKey === "boldonse" || fontKey === "montserrat";
+          x.fillText(isLatinCaps ? titleTxt.toUpperCase() : titleTxt, leftX, titleY);
+
+          const authorText = authorTxt;
+          if (authorText) {
+            x.fillStyle = theme.authorColor;
+            x.font = `400 36px -apple-system, "Helvetica Neue", ${SYS_CN}, sans-serif`;
+            x.fillText("by " + authorText, leftX, subY);
+          }
+
+          if (isFirstTime) $("warn").textContent = "正在绘制最终海报...";
+
+          let miss = 0;
+          let y = L.head;
+          let itemIndex = 0;
+
+          for (let r = 0; r < L.counts.length; r++) {
+            const cCount = L.counts[r];
+            const s = L.mode === "square" ? L.s : L.sizes[r];
+            // 每行水平居中，保证左右留白对称
+            const rowW = cCount * s + (cCount - 1) * gap;
+            const x0 = (W - rowW) / 2; // 始终相对画幅水平居中
+
+            for (let c = 0; c < cCount; c++) {
+              const cx = x0 + c * (s + gap);
+              const cy = y;
+              const it = pick[itemIndex];
+              const img = imgs[itemIndex];
+
+              if (img) {
+                drawCover(x, img, cx, cy, s);
+              } else {
+                miss++;
+                x.fillStyle = theme.emptyCell;
+                x.fillRect(cx, cy, s, s);
+              }
+
+              if (L.textMode) {
+                x.fillStyle = theme.albumTextColor;
+                x.font = `500 ${baseFont}px ${SYS_CN}, sans-serif`;
+                x.fillText(fit(x, it.name, s), cx, cy + s + baseFont * 1.5);
+
+                x.fillStyle = theme.albumArtistColor;
+                x.font = `400 ${baseFont * 0.82}px ${SYS_CN}, sans-serif`;
+                x.fillText(fit(x, it.artist, s), cx, cy + s + baseFont * 2.5);
+              }
+              itemIndex++;
+            }
+            y += s + cap + gap;
+          }
+
+          posterData = { pick, imgs, L, miss };
+          hasRendered = true;
+
+          cv.style.display = "block";
+          $("dl").style.display = "";
+          // iOS Safari 忽略 <a download>，canvas 元素本身也不支持长按保存。
+          // 生成后把画布内容镜像成一张真实 <img>：触摸设备上显示它（可长按存入相册），
+          // 桌面端保持 canvas + 下载按钮不变。
+          syncSaveImg(cv);
+
+          const modeTip = L.mode === "square" ? `方形网格 ${L.side}×${L.side}` : "阶梯排版";
+          const themeName =
+            themeKey === "light" ? "极简白" : themeKey === "glass" ? "毛玻璃" : "深邃黑";
+          if (miss) {
+            $("warn").textContent = `完成（${modeTip} · ${themeName}）！但 ${miss} 张封面加载失败（显示为灰块）。`;
+          } else if (!isFirstTime) {
+            $("warn").textContent = `${modeTip} · ${themeName} · 已实时更新`;
+          } else {
+            $("warn").textContent = IS_TOUCH
+              ? `生成完成（${modeTip}）！长按上方图片即可存入相册。`
+              : `生成完成（${modeTip}）！点击下载图片。`;
+          }
+        } finally {
+          hideVeil();
+        }
+      }
+
+      // ===== 首次生成 =====
+      $("gen").onclick = () => renderPoster(true);
+
+      // ===== 即选即看：改下拉框直接重绘（300ms 防抖，无遮罩） =====
+      function scheduleRedraw() {
+        // 画布还没内容时什么都不做，等用户点「生成图片」
+        if (!hasRendered) return;
+        clearTimeout(redrawTimer);
+        redrawTimer = setTimeout(() => renderPoster(false), 300);
+      }
+      ["themeSel", "fontSel", "showInfo", "layoutSel"].forEach((id) => {
+        const el = $(id);
+        if (el) el.addEventListener("change", scheduleRedraw);
+      });
 
       // 触摸设备（手机/平板）才走长按保存路径
       const IS_TOUCH =
