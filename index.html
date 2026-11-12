@@ -774,6 +774,29 @@
         margin-top: 12px;
       }
 
+      /* 长按保存用的镜像图：只在触摸设备显示（桌面端有下载按钮，无需重复） */
+      #saveImg {
+        display: none;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0c0c0e;
+        margin-top: 12px;
+        -webkit-touch-callout: default;
+        -webkit-user-select: auto;
+        user-select: auto;
+      }
+
+      .save-tip {
+        display: none;
+        margin: 10px 0 0;
+        text-align: center;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--mute);
+      }
+
       /* ====================== 毛玻璃 Toast ====================== */
       .toast {
         position: fixed;
@@ -1029,6 +1052,9 @@
     </div>
     <div id="warn" class="msg" style="text-align: center;"></div>
     <canvas id="cv"></canvas>
+    <!-- 镜像图：canvas 不能长按保存，触摸设备上改显示这张真实 <img> -->
+    <img id="saveImg" alt="生成的海报，长按可保存到相册" />
+    <p id="saveTip" class="save-tip">长按上方图片 → 存储到照片</p>
 
       <!-- ====================== 页脚 ====================== -->
       <footer class="foot">
@@ -2263,11 +2289,53 @@
 
         cv.style.display = "block";
         $("dl").style.display = "";
+        // iOS Safari 忽略 <a download>，canvas 元素本身也不支持长按保存。
+        // 生成后把画布内容镜像成一张真实 <img>：触摸设备上显示它（可长按存入相册），
+        // 桌面端保持 canvas + 下载按钮不变。
+        syncSaveImg(cv);
         const modeTip = L.mode === "square" ? `方形网格 ${L.side}×${L.side}` : "阶梯排版";
         $("warn").textContent = miss
           ? `完成（${modeTip}）！但 ${miss} 张封面加载失败（显示为灰块）。`
-          : `生成完成（${modeTip}）！长按图片保存或点击下载。`;
+          : IS_TOUCH
+            ? `生成完成（${modeTip}）！长按上方图片即可存入相册。`
+            : `生成完成（${modeTip}）！点击下载图片。`;
       };
+
+      // 触摸设备（手机/平板）才走长按保存路径
+      const IS_TOUCH =
+        window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
+        navigator.maxTouchPoints > 1;
+
+      function syncSaveImg(canvas) {
+        const img = $("saveImg");
+        const tip = $("saveTip");
+        if (!IS_TOUCH || !img || !canvas.width) return;
+
+        // 用 JPEG（0.92）：2400px 海报存成 PNG 有 4-8MB，手机上保存慢、
+        // 部分机型直接失败；封面本就是照片，JPEG 观感几乎无差别（约 200KB）。
+        // 用 data: URL 而不是 blob: —— iOS Safari 对 blob 图片长按保存
+        // 时常给出空白结果，data URL 才是稳的那条路。
+        try {
+          const url = canvas.toDataURL("image/jpeg", 0.92);
+          if (!url || url.length < 1024) return;
+          img.src = url;
+          img.style.display = "block";
+          canvas.style.display = "none";
+          if (tip) tip.style.display = "block";
+        } catch (e) {
+          // 画布被跨域图片污染时会抛错，此时保持 canvas 原样显示
+        }
+      }
+
+      function clearSaveImg() {
+        const img = $("saveImg");
+        const tip = $("saveTip");
+        if (img) {
+          img.removeAttribute("src");
+          img.style.display = "none";
+        }
+        if (tip) tip.style.display = "none";
+      }
 
       $("dl").onclick = () => $("cv").toBlob((b) => {
           const a = document.createElement("a");
@@ -2284,6 +2352,7 @@
           $("cv").style.display = "none";
           $("dl").style.display = "none";
           $("warn").textContent = "";
+          clearSaveImg();
         }
       };
     </script>
