@@ -4,11 +4,38 @@
 
 一个纯前端、零依赖的专辑海报生成器。搜索专辑、拖拽排序、选好画幅，一键导出你的 Top Albums 海报。
 
+<p>
+  <a href="https://limbkins.github.io/lifeline/">
+    <img src="https://img.shields.io/badge/%E2%96%B6%20%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%94%A8-%E7%82%B9%E6%AD%A4%E5%BC%80%E5%A7%8B-111111?style=for-the-badge&logo=github&logoColor=white" alt="在线试用" height="36">
+  </a>
+</p>
+
 ![单文件](https://img.shields.io/badge/single--file-HTML-e34f26?style=flat-square)
 ![无依赖](https://img.shields.io/badge/dependencies-0-4caf50?style=flat-square)
-![深色主题](https://img.shields.io/badge/theme-dark-111111?style=flat-square)
+![主题](https://img.shields.io/badge/themes-3%20kinds-6b6b6b?style=flat-square)
+![字体](https://img.shields.io/badge/fonts-9%20kinds-2c2218?style=flat-square)
 
 ---
+
+## 这是什么
+
+如果你在网易云、Spotify 或 Apple Music 里存过一堆喜欢的专辑，Lifeline 可以把它们排成一张海报：
+
+搜到专辑 → 拖成你心里的名次 → 选画幅和背景 → 导出图片。
+
+不用注册，不用登录，不联网也能打开（搜索需要联网）。列表存在你自己的浏览器里，不会上传到任何服务器。
+
+<details>
+<summary>点这里看效果长什么样</summary>
+
+生成的成品是横竖各 2400px 的高清图，有两种排版：
+- **阶梯排版** — 前排大、后排小，第 1 名最显眼
+- **方形网格** — 正好 9 / 16 / 25 张时自动排成方阵
+
+配色有三套：深邃黑、极简白、复古乐谱（羊皮纸配乐谱纹）。
+标题字体 9 款可选，大小三档可调。
+
+</details>
 
 ## 特性
 
@@ -25,6 +52,14 @@
 - **本地持久化** — 列表与设置存于 IndexedDB，关掉浏览器也不丢
 
 ## 快速开始
+
+**方式一：直接用**
+
+打开 👉 **https://limbkins.github.io/lifeline/**
+
+无需安装，手机和电脑都能用。手机上生成后长按图片即可存入相册。
+
+**方式二：下载到本地用**
 
 无需构建、无需安装任何依赖：
 
