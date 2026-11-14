@@ -3160,27 +3160,36 @@
         }
 
         // ---------- 列表串烧 ----------
-        // 实测参考图（896×1200，10 行）：
-        //   分隔线 x 从 5.2% 到 94.6%（左右各约 47px 内边距）
-        //   行距 95px / 1200 = 7.9%
-        //   缩略图约 56px = 6.3% 图宽、行高的 59%
-        //   数字占 x 70~139（字号接近行高）
-        //   大标题字高 53px = 4.4% 图宽
+        // 两张参考图的像素实测（比例都按画布**宽度**归一，与画布高度无关）：
+        //
+        //                     图一(1600×1740)   图二(896×1200)   目标
+        //   封面宽            6.31%             9.60%            9.60%
+        //   行距              9.16%            10.44%           10.42%
+        //   封面 / 行距       69%               92%              92%
+        //   曲名字高          2.44%             3.79%            3.75%
+        //   歌手字高          1.56%             2.57%            2.50%
+        //   数字高            —                 6.14%            6.00%
+        //   分隔线左起        4.2%              5.3%             4.17%
+        //
+        // 图一是我们先前的参数（封面 150 / 行距 220），问题很清楚：
+        //   封面只占行高 69%（上下各留 15% 空白），字号也小，
+        //   曲名一行最长只到画布 46% —— 右边一半全是空的。
+        // 图二反过来：封面几乎顶满行高（92%），字号同步放大，
+        // 于是文字自然写到 49% 宽，看起来"右边界"才成立。
         //
         // 换算到 2400 宽：
-        //   缩略图 6.3% × 2400 ≈ 151 → 取 150
-        //   行距按「行高 ≈ 缩略图 / 0.59」得 254，但这样 10 行要 2540px 高，
-        //   比参考图的 1200/896 比例瘦长太多。参考图的行其实很紧凑，
-        //   缩略图只占行高 59% 是因为上下各有约 20% 的呼吸。
-        //   实际取 per-row 220：缩略图 150 占 68%，留白略少于参考图但更紧凑。
-        //   这是"10 行排进竖长条"的舒适区间。
-        const rowPitch = 220;
-        const thumb = 150;
-        const textGap = 40;            // 缩略图与曲名之间
+        //   封面 9.60% × 2400 = 230
+        //   行距 10.42% × 2400 = 250   → 封面 230 / 250 = 92% ✓
+        //   曲名 3.75% × 2400 = 90     → 是行距的 0.36
+        //   歌手 2.50% × 2400 = 60     → 是行距的 0.24
+        //   数字 6.00% × 2400 = 144    → 是封面的 0.63
+        const rowPitch = 250;
+        const thumb = 230;
+        const textGap = 44;            // 缩略图与曲名之间
         const contentW = W0 - PAD * 2;
 
         // 数字列宽必须按「最大编号的位数」实测算出来。
-        // 固定 150 在两位数是会撞：'10' 两个字在 172px 字号下宽约 190px，
+        // 固定值在两位数是会撞：'10' 两个字在 172px 字号下宽约 190px，
         // 直接压到缩略图上（第一版就是这么错的，10/11/12 全部重叠）。
         // 用同款 bold Helvetica 量一次最宽组合，转成比例再乘字号。
         const digits = String(N).length;
@@ -3192,19 +3201,30 @@
           for (let d = 0; d < 10; d++) w = Math.max(w, mc.measureText(String(d)).width);
           return (w / 200) * digits * 1.06;
         })();
-        const numSize = Math.round(thumb * 1.15);
-        const numW = Math.max(Math.round(thumb * 0.7), Math.round(numSize * numRatio));
+        // 数字高取封面的 0.63（图二实测 55/86 ≈ 0.64）。
+        // 先前是 1.15 倍封面 —— 那让数字比封面还高，撑破了行的节奏。
+        const numSize = Math.round(thumb * 0.63 / 0.72);
+        const numW = Math.max(Math.round(thumb * 0.62), Math.round(numSize * numRatio));
+        // 数字与封面之间的呼吸：图二实测 86→137 中间有 43px 空白（封面宽的 0.5），
+        // 但那是数字右边缘到封面的距离，右对齐后实际间隙就是 numGap。
+        const numGap = Math.round(thumb * 0.19);
 
-        const titleSize = 132;
+        // 大标题：图二实测 cap 高 54/896 = 6.03% → 2400 宽下需 cap 高 145，
+        // 对应字号 145 / 0.72 ≈ 201。先前取 145 是直接把 cap 高当字号了，
+        // 结果标题只有曲名的 1.15 倍，压不住版面。
+        const titleSize = 200;
         const titleTop = PAD;
         const titleBottom = titleTop + Math.round(titleSize * 1.05);
-        const listTop = titleBottom + 72;
+        // 标题与列表之间的呼吸：图二实测标题 cap 底 y=119、第 1 行封面顶 y=188，
+        // 间隔 69px = 画布宽的 7.7% → 2400 宽下 185。
+        // 先前取 78 太紧了，标题几乎贴着第一行。
+        const listTop = titleBottom + 110;
 
         const listH = N * rowPitch;
         const H = listTop + listH + PAD;
 
-        // 分隔线：每行底部一条，最后一行的线就是列表收尾
-        const lineW = Math.round(contentW * 0.98);
+        // 分隔线：贯穿内容宽（图二 5.3%~94.6%，两侧各留 5% 内边距）
+        const lineW = Math.round(contentW * 0.99);
 
         return {
           mode: "tracklist",
@@ -3218,15 +3238,21 @@
           numX: PAD,
           // 缩略图紧跟数字列右边缘，间距固定 —— 数字右对齐后
           // 这一列才是齐平的，不会因位数变化而忽宽忽窄
-          thumbX: PAD + numW + Math.round(thumb * 0.22),
-          textX: PAD + numW + Math.round(thumb * 0.22) + thumb + textGap,
+          thumbX: PAD + numW + numGap,
+          textX: PAD + numW + numGap + thumb + textGap,
           textRight: PAD + contentW,
-          // 数字字号跟着缩略图走：略大于缩略图，才有"压住整行"的分量。
-          // 参考图里数字比缩略图高出约 15%。
+          // 数字字号：图二实测数字高 55px / 封面 86px = 0.64。
+          // Helvetica 数字的 cap height 约占字号 0.72，所以
+          // 「视觉高 0.64 × 封面」对应的字号是 0.64 / 0.72 × 封面。
           numSize,
-          // 曲名字号：取整行节拍的 0.34，读起来是"标题"而非"注释"
-          titleSize: Math.round(rowPitch * 0.34),
-          artistSize: Math.round(rowPitch * 0.175),
+          // 曲名字号：图二曲名视觉高 34px，Helvetica cap 0.72 → 字号 47
+          // 换算到 2400 宽：34/896 × 2400 / 0.72 = 126
+          titleSize: 126,
+          // 歌手字高 23px → 23/896 × 2400 / 0.72 = 86，但小字视觉上要略收，
+          // 取 78 才不会和曲名抢
+          artistSize: 78,
+          // 曲名与歌手名的基线间距（图二 232→263 = 31px → 2400 宽下 83）
+          artistGap: 84,
           head: listTop,
           lineX0: PAD,
           lineX1: PAD + lineW,
@@ -3620,10 +3646,12 @@
           // 必须右对齐而不是左对齐 —— 否则 1~9 贴着左边、10 以后
           // 突然变宽，数字与缩略图之间的缝一会儿宽一会儿窄，
           // 整列看起来是歪的。右对齐后所有编号的右边缘齐平。
+          // 垂直：数字的 cap 高约字号的 0.72，要让**视觉**居中，
+          // 基线得落在 rowMid + capH/2 而不是 rowMid + size*0.36。
           x.fillStyle = cNum;
           x.font = bold(L.numSize);
           x.textAlign = "right";
-          x.fillText(String(i + 1), L.numX + L.numW, rowMid + Math.round(L.numSize * 0.36));
+          x.fillText(String(i + 1), L.numX + L.numW, rowMid + Math.round(L.numSize * 0.72 / 2));
           x.textAlign = "left";
 
           // 缩略封面：垂直居中于行
@@ -3637,27 +3665,36 @@
           // 曲名：大字白色粗体。超长时缩字号而不是截断 ——
           // 列表版每行有整幅宽度可用，缩一点字号几乎看不出来，
           // 但截断会让曲名失去辨识度。
+          //
+          // 垂直对齐全换成了「文字块整体居中」：
+          // 原来是曲名基线取 rowMid + titleSize*0.06，歌手名再往下推
+          // 1.32 倍字号 —— 那套偏移是给 75px 小字调的，字号翻到 126 之后
+          // 两行会整体偏下、压到分隔线上。
+          // 现在先算两行合起来的高度，再把块顶对齐到行内的垂直中心。
           x.fillStyle = cTrack;
           const nameMaxW = L.textRight - L.textX;
           const nameTxt = it.name.toUpperCase();
-          x.font = bold(L.titleSize);
-          if (x.measureText(nameTxt).width > nameMaxW) {
-            shrinkToWidth(x, nameTxt, nameMaxW, L.titleSize, bold, 30);
-          } else {
-            x.font = bold(L.titleSize);
-          }
-          x.fillText(nameTxt, L.textX, rowMid + Math.round(L.titleSize * 0.06));
+          const nameSize = x.measureText(nameTxt).width > nameMaxW
+            ? shrinkToWidth(x, nameTxt, nameMaxW, L.titleSize, bold, 40)
+            : (x.font = bold(L.titleSize), L.titleSize);
+          // 两行文本块的视觉高度：曲名 cap 高 + 间距 + 歌手名 cap 高
+          const titleCap = Math.round(nameSize * 0.72);
+          const artistCap = Math.round(L.artistSize * 0.72);
+          const blockH = titleCap + L.artistGap + artistCap;
+          const blockTop = rowMid - blockH / 2;
+          const nameBase = blockTop + titleCap;
+          const artistBase = nameBase + L.artistGap;
+          x.fillText(nameTxt, L.textX, nameBase);
 
           // 歌手名：小字灰色
           x.fillStyle = cArtist;
           const artistTxt = (it.artist || "");
-          x.font = med(L.artistSize);
           if (x.measureText(artistTxt).width > nameMaxW) {
-            shrinkToWidth(x, artistTxt, nameMaxW, L.artistSize, med, 16);
+            shrinkToWidth(x, artistTxt, nameMaxW, L.artistSize, med, 30);
           } else {
             x.font = med(L.artistSize);
           }
-          x.fillText(artistTxt, L.textX, rowMid + Math.round(L.titleSize * 0.06) + Math.round(L.artistSize * 1.32));
+          x.fillText(artistTxt, L.textX, artistBase);
 
           // 分隔线：贯穿整行底部，极淡
           x.strokeStyle = cLine;
