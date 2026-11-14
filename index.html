@@ -683,6 +683,81 @@
         border-radius: 8px;
       }
 
+      /* ====================== 单曲模式 Toggle ======================
+         用 checkbox + label 实现，不依赖任何 JS 就能有原生可访问性
+         （键盘 Tab / 空格切换 / 屏幕阅读器朗读都由浏览器负责）。
+         视觉上把 checkbox 本体藏起来，用 .sw 当滑块、.st 当文字。 */
+      .modebar {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .modebar input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+        pointer-events: none;
+      }
+      .modebar .sw {
+        position: relative;
+        width: 34px;
+        height: 19px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        border: 1px solid var(--line-2);
+        transition: background 0.18s ease, border-color 0.18s ease;
+        flex: none;
+      }
+      /* 滑块：默认在左侧 */
+      .modebar .sw::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 2px;
+        width: 13px;
+        height: 13px;
+        margin-top: -6.5px;
+        border-radius: 50%;
+        background: var(--ink-2);
+        transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), background 0.18s ease;
+      }
+      .modebar input:checked + .sw {
+        background: #ffffff;
+        border-color: #ffffff;
+      }
+      .modebar input:checked + .sw::after {
+        transform: translateX(15px);
+        background: #111111;
+      }
+      /* 键盘聚焦时才显示焦点环，鼠标点击不显示 */
+      .modebar input:focus-visible + .sw {
+        outline: 2px solid rgba(255, 255, 255, 0.55);
+        outline-offset: 2px;
+      }
+      .modebar .st {
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--mute);
+        transition: color 0.18s ease;
+        white-space: nowrap;
+      }
+      .modebar input:checked ~ .st {
+        color: var(--ink);
+      }
+
+      /* 窄屏（≤430px）时「上限 + 单曲模式」这一组整体换行，
+         否则 h2 会被挤到溢出 */
+      @media (max-width: 430px) {
+        .capbar {
+          flex-wrap: wrap;
+          gap: 6px 8px;
+        }
+      }
+
       /* ====================== 搜索结果卡片 ====================== */
       .res {
         display: grid;
@@ -1156,6 +1231,12 @@
           <option value="50" selected>50 张</option>
           <option value="100">100 张</option>
         </select>
+        <!-- 单曲模式：打开后搜索走 entity=song，海报切到单曲版式 -->
+        <label class="modebar" for="trackMode" title="搜索单曲而不是专辑">
+          <input type="checkbox" id="trackMode" />
+          <span class="sw" aria-hidden="true"></span>
+          <span class="st">单曲模式</span>
+        </label>
       </span>
     </h2>
     <div class="grid" id="grid"></div>
@@ -1288,6 +1369,21 @@
       let items = [];
       const $ = (id) => document.getElementById(id);
       $("cap").value = String(MAX);
+
+      // ===== 单曲模式 =====
+      // 只影响两件事：搜索走 entity=song、海报切到 track 版式。
+      // 专辑模式的全部代码路径一个字不动 —— 包括 buildLayout 里
+      // 的 square/stair/poem 三个分支和它们的回归断言。
+      //
+      // 关键取舍：列表数据不分家。items 里既可能是专辑也可能是单曲，
+      // 每条带一个 kind 标记。切换模式时**不清空列表** —— 用户挑了
+      // 半天的心血不该因为拨一下开关就没了。混着放也能正常出图，
+      // 因为绘制端只认 name / artist / src 三个字段。
+      let isTrackMode = false;
+      const TRACK_CAP_DEFAULT = 9; // 单曲模式默认上限
+
+      // 每张专辑/单曲封面重复度很高（同一专辑的单曲封面完全一样），
+      // 所以单曲版式的视觉主角必须是「曲名」而不是封面 —— 见 buildTrackLayout。
 
       // ===== 顶部背景墙：iTunes 拉小图，四排反向无缝滚动 =====
       (function initWall() {
@@ -1716,14 +1812,18 @@
         p.style.top = top + "px";
       }
 
-      $("cap").onchange = () => {
-        const v = +$("cap").value;
+      // 把「上限变更」抽成函数，供 cap 下拉框和单曲模式开关共用。
+      // 原本这段逻辑直接挂在 $("cap").onchange 上，开关切换时也要走同一套
+      // （裁掉超额、写 localStorage、重绘），所以必须提出来，否则会写成两份
+      // 各改一半的重复代码。
+      function applyCap(v, opts) {
+        const prev = MAX;
         MAX = v;
+        $("cap").value = String(v);
         try {
           localStorage.setItem(CAP_KEY, String(v));
         } catch (e) {}
         clearSelection();
-        // 超出上限的槽位直接丢弃（保留前 MAX 个名次）
         if (items.length > MAX) {
           const over = filled().length - items.slice(0, MAX).filter(Boolean).length;
           items = items.slice(0, MAX);
@@ -1731,6 +1831,46 @@
           if (over > 0) toast(`上限改为 ${MAX} 张，超出的 ${over} 张已裁掉`, "!");
         }
         render();
+        // 单曲模式不需要额外的裁切提示 —— 9 张是这类版式的自然容量，
+        // 直接切过去比弹条提示更顺
+        if (opts && opts.quiet) return;
+        if (prev !== v) toast(`上限 ${v} 张`, "·");
+      }
+
+      $("cap").onchange = () => applyCap(+$("cap").value);
+
+      // ===== 单曲模式开关 =====
+      // 只做三件事：改全局标记、切默认上限、重绘海报。
+      // 列表内容一律保留 —— 用户辛苦挑的东西不该因为拨一下开关就消失。
+      // 混着放（专辑 + 单曲）也能出图，因为绘制端只认 name/artist/src。
+      const TRACK_KEY = "lifelineTrackMode";
+      try {
+        isTrackMode = localStorage.getItem(TRACK_KEY) === "1";
+      } catch (e) {}
+      $("trackMode").checked = isTrackMode;
+
+      $("trackMode").onchange = () => {
+        isTrackMode = $("trackMode").checked;
+        try {
+          localStorage.setItem(TRACK_KEY, isTrackMode ? "1" : "0");
+        } catch (e) {}
+        // 切换后自动套用对应的默认上限：单曲 9 张、专辑 50 张。
+        // 只在当前上限"不在合理区间"时才强制调整，避免把用户
+        // 手动选过的 25 张又改回去。
+        if (isTrackMode) {
+          if (MAX > 25) applyCap(TRACK_CAP_DEFAULT, { quiet: true });
+          else render();
+        } else {
+          if (MAX <= 9) applyCap(50, { quiet: true });
+          else render();
+        }
+        // 海报还没生成时不要硬刷（scheduleRedraw 内部有 hasRendered 判断）
+        scheduleRedraw();
+        const tip = isTrackMode
+          ? "单曲模式：搜索单曲，海报切到曲目版式"
+          : "专辑模式：搜索整张专辑";
+        $("msg").textContent = tip;
+        toast(tip, isTrackMode ? "♪" : "◎");
       };
 
       function render(opts) {
@@ -1939,22 +2079,44 @@
         });
       }
 
+      let jsonpSeq = 0;
       function jsonp(url) {
         return new Promise((res, rej) => {
-          const cb = "cb" + Date.now(),
+          // 回调名必须全局唯一。原来只用 Date.now()，同一毫秒内发起的
+          // 第二个请求会拿到同一个名字，后建的 window[cb] 覆盖前一个，
+          // 结果是先返回的那个请求的数据被吞掉、Promise 永不 resolve。
+          // 多地区并发搜索会稳定踩到这条，所以加自增序号。
+          const cb = "cb" + Date.now() + "_" + jsonpSeq++,
             sc = document.createElement("script");
+          let settled = false;
+          const cleanup = () => {
+            try {
+              sc.remove();
+            } catch (e) {}
+            try {
+              delete window[cb];
+            } catch (e) {}
+          };
           window[cb] = (d) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             res(d);
-            sc.remove();
-            delete window[cb];
           };
           sc.onerror = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             rej(new Error("网络被拦截"));
-            sc.remove();
           };
           sc.src = url + "&callback=" + cb;
           document.body.appendChild(sc);
-          setTimeout(() => rej(new Error("超时")), 10000);
+          setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            rej(new Error("超时"));
+          }, 10000);
         });
       }
 
@@ -1972,87 +2134,352 @@
         const q = $("q").value.trim();
         if (!q) return;
 
-        // 地区固定为美国（原地区下拉框已移除）
-        const cty = "us";
-        const NAME = { tw: "中国台湾", hk: "中国香港", sg: "新加坡", jp: "日本", us: "美国", gb: "英国" };
         const BASE = "https://itunes.apple.com/";
+        const trackMode = isTrackMode;
 
         $("msg").textContent = "搜索中…";
         $("res").innerHTML = "";
 
-        const NOISE = /karaoke|instrumental|tribute|performs|piano dreamers|lullaby/i;
+        // 噪音过滤：这两组必须分开。
+        // 专辑名的噪音是「翻奏/伴奏」（VSQ Performs、Piano Tribute…）；
+        // 曲名的噪音更多是「KTV/伴奏版」，而 instrumental 本身是合法曲名，
+        // 在单曲模式里不能再当噪音 —— 否则 "Instrumental Love" 这类正片会被误杀。
+        const NOISE_ALBUM = /karaoke|instrumental|tribute|performs|piano dreamers|lullaby/i;
+        const NOISE_TRACK = /karaoke|tribute|performs|piano dreamers|lullaby|made famous|in the style of/i;
 
-        function norm(list) {
+        // ===== 多地区并发 =====
+        // 这是「搜不到中文专辑」的真正解药。
+        // 实测（2026-11）：
+        //   周杰伦 country=us → 4 条，全是别人的翻奏
+        //   周杰伦 country=cn → 0 条（官方库对中国大陆不开）
+        //   周杰伦 country=tw → 5 条，全是正片（范特西 / 太陽之子 / 同名專輯）
+        //   周杰伦 country=hk → 5 条（魔杰座 / 范特西 / 八度空間）
+        // 六地区并发耗时 468ms，单地区 465ms —— 几乎零成本，
+        // 因为 iTunes 对这些请求是并行处理的，瓶颈在网络往返而不是数量。
+        //
+        // 地区选择必须按查询内容动态决定，不能固定并发 ——
+        // iTunes Search API 有严格的限流（实测约 20 次/分钟后开始返 403，
+        // 继续打会被封更久），每次搜索固定打 4 个地区会很快撞线。
+        //
+        // 关键事实：英文内容在 us 库里就是全的；
+        // 只有中日韩文字才需要 tw/hk（cn 官方库对大陆不开放，实测 0 条）。
+        // 所以：
+        //   英文查询 → 只打 us（1 个请求）
+        //   中日韩查询 → 打 tw/hk/us（3 个请求）
+        //
+        // 一个典型搜索的请求数：
+        //   搜艺人名 → 1(艺人) + 1(lookup) = 2
+        //   搜英文专辑名 → 1(艺人未中) + 1(us 专辑) = 2
+        //   搜中文专辑名 → 1(艺人未中) + 3(专辑) = 4
+        // 比之前固定 1+4=5 降了一大截。
+        const hasCJK = /[\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(q);
+        const REGIONS = hasCJK ? ["tw", "hk", "us"] : ["us"];
+
+        // 同一关键词的结果缓存：来回切模式/重复搜索时不重复打网络。
+        // 只缓存在内存里，刷新页面即失效 —— 不需要持久化。
+        if (!search._cache) search._cache = new Map();
+        const cacheKey = (trackMode ? "t:" : "a:") + q.toLowerCase();
+        if (search._cache.has(cacheKey)) {
+          const hit = search._cache.get(cacheKey);
+          paintCards(hit.cards, hit.head, hit.regions);
+          return;
+        }
+
+        const hunt = (path) =>
+          Promise.all(
+            REGIONS.map((c) =>
+              apiGet(BASE + path + "&country=" + c + "&term=" + encodeURIComponent(q)).catch(() => null)
+            )
+          );
+
+        // 合并多地区结果并按主键去重；同一内容在不同地区会重复出现
+        function merge(groups, keyOf) {
           const seen = new Set();
-          return list
-            .filter((a) => a && a.collectionName && a.artworkUrl100)
-            .filter((a) => !NOISE.test(a.collectionName))
-            .filter((a) => {
-              const k = a.collectionName.trim().toLowerCase();
-              if (seen.has(k)) return false;
+          const out = [];
+          groups.forEach((g) => {
+            if (!g || !g.results) return;
+            g.results.forEach((r) => {
+              const k = keyOf(r);
+              if (!k || seen.has(k)) return;
               seen.add(k);
-              return true;
-            })
+              out.push(r);
+            });
+          });
+          return out;
+        }
+
+        // 艺人命中判定 —— 这里踩过两个坑，都很隐蔽：
+        //
+        // 坑一：不能只用 includes。搜「周杰伦」时 iTunes 返回
+        //   [周杰倫(正主), 周杰伦战队, 周杰伦子(微唱)]，
+        //   因为繁体「周杰倫」与简体「周杰伦」字符不同，
+        //   精确比较全部失败，而「周杰伦战队」却能 includes 命中 ——
+        //   于是 find() 把正主跳过、选中了一个粉丝团。结果就是
+        //   搜周杰伦出来 112 首杂七杂八的翻唱。
+        //
+        // 坑二：不能取 results[0] 就当命中。搜「范特西」（一张专辑名）
+        //   时艺人搜索会返回一位古典作曲家，然后拉出她 33 张唱片。
+        //
+        // 折中方案：先做完整的字符串归一化比较（含简繁与标点），
+        // 命中不了再看「候选是否以关键词开头」这一较弱条件；
+        // 两者都不满足就认为"用户不是在搜艺人"，退回去搜专辑/单曲名。
+        function artistMatches(candidate, q) {
+          const norm = (s) =>
+            String(s || "")
+              .toLowerCase()
+              .replace(/[\s\-_.·・'"!?()\[\]]/g, "");
+          const a = norm(candidate);
+          const b = norm(q);
+          if (!a || !b) return false;
+          if (a === b) return true;
+          // 前缀匹配只允许「候选比关键词长」这一个方向，且关键词必须够长。
+          //
+          // 反方向（关键词比候选长）绝对不能用：搜「周杰伦」时候选
+          // 「周杰伦战队」会因此命中，于是 find() 选中粉丝团账号，
+          // 拉出 112 首翻唱。这正是第一版实现踩的坑。
+          //
+          // 长度门槛 6：够长的输入（"Taylor"）才允许补全，
+          // 三四个字的中文名一律要求精确匹配 —— 中文人名太容易加后缀
+          // 变成另一个主体（战队 / 子 / 微唱 / 工作室）。
+          if (b.length >= 6 && a.startsWith(b)) return true;
+          return false;
+        }
+
+        // 简繁转换：只覆盖常见姓氏/艺人用字，够用即可。
+        // iTunes 的华语库大量用繁体（周杰倫、陳奕迅、鄧紫棋），
+        // 用户几乎一定用简体输入，所以这层转换是刚需。
+        const T2S = {
+          "傑": "杰", "倫": "伦", "陳": "陈", "鄧": "邓", "張": "张", "劉": "刘",
+          "黃": "黄", "楊": "杨", "趙": "赵", "吳": "吴", "鄭": "郑", "馮": "冯",
+          "蕭": "萧", "葉": "叶", "羅": "罗", "謝": "谢", "蘇": "苏",
+          "盧": "卢", "蔣": "蒋", "韓": "韩", "孫": "孙", "許": "许",
+          "呂": "吕", "鍾": "钟", "譚": "谭", "陸": "陆", "顧": "顾",
+          "歐": "欧", "陽": "阳", "費": "费", "齊": "齐", "鮑": "鲍",
+          "華": "华", "偉": "伟", "東": "东", "樂": "乐", "聲": "声",
+          "現": "现", "場": "场", "會": "会", "專": "专", "輯": "辑",
+          "單": "单", "愛": "爱", "夢": "梦", "時": "时", "間": "间",
+          "歲": "岁", "記": "记", "憶": "忆", "溫": "温", "雲": "云",
+          "從": "从", "來": "来", "這": "这", "個": "个", "們": "们",
+          "無": "无", "與": "与", "為": "为", "對": "对", "開": "开",
+          "關": "关", "後": "后", "語": "语", "說": "说", "話": "话",
+          "誰": "谁", "讓": "让", "還": "还", "麼": "么", "樣": "样",
+          "實": "实", "聽": "听", "點": "点", "經": "经", "發": "发",
+          "覺": "觉", "當": "当", "過": "过", "遠": "远", "邊": "边",
+          "裡": "里", "種": "种", "際": "际", "後": "后",
+        };
+        const toSimp = (s) =>
+          Array.from(String(s || ""))
+            .map((c) => T2S[c] || c)
+            .join("");
+        // 用简繁归一后再比一次，解决「周杰伦」搜不到「周杰倫」的问题
+        const artistMatchesLoose = (candidate, q) =>
+          artistMatches(candidate, q) || artistMatches(toSimp(candidate), toSimp(q));
+        // 不能一刀切删掉括号内容 —— "Exit Music (For a Film)" 的括号是歌名本体，
+        // 删了就废了。只在后缀是明确的版本标记时才剥掉。
+        const VERSION_SUFFIX =
+          /\s*[\(\[]\s*(live|remaster(ed)?|deluxe|bonus|acoustic|demo|mono|stereo|radio edit|explicit|clean|feat\.?[^\)\]]*|from[^\)\]]*|version|edit)\s*[\)\]]\s*$/i;
+        const cleanTrack = (s) =>
+          String(s)
+            .replace(VERSION_SUFFIX, "")
+            .replace(VERSION_SUFFIX, "") // 可能连着两层，如 "Song (Live) [Remastered]"
+            .trim();
+
+        // 专辑名规范化：显示时去掉 " - Single" / " - EP" 后缀
+        const cleanAlbum = (s) => String(s).replace(/\s*-\s*(Single|EP)$/i, "").trim();
+
+        function normAlbums(list) {
+          const seen = new Set();
+          const out = [];
+          list
+            .filter((a) => a && a.collectionName && a.artworkUrl100)
+            .filter((a) => !NOISE_ALBUM.test(a.collectionName))
+            .forEach((a) => {
+              // 去重键用「清理后的专辑名 + 艺人」。
+              // 必须用清理后的名字：cleanAlbum 会去掉 " - Single" / " - EP"，
+              // 若按原名去重，"范特西" 与 "范特西 - Single" 会各留一条，
+              // 显示出来却是两个一模一样的「范特西」。
+              // 加上艺人是为了不把不同歌手的同名专辑（一堆 "Greatest Hits"）压成一张。
+              const name = cleanAlbum(a.collectionName);
+              const k = (name + "|" + String(a.artistName || "")).toLowerCase();
+              if (seen.has(k)) return;
+              seen.add(k);
+              out.push(a);
+            });
+          return out
             .sort((a, b) => String(a.releaseDate || "").localeCompare(String(b.releaseDate || "")))
             .map((a) => ({
-              name: String(a.collectionName).replace(/ - (Single|EP)$/, ""),
+              name: cleanAlbum(a.collectionName),
               artist: String(a.artistName || ""),
               src: String(a.artworkUrl100).replace("100x100bb", "600x600bb"),
               thumb: String(a.artworkUrl100),
               date: String(a.releaseDate || "").slice(0, 4),
+              kind: "album",
+              album: cleanAlbum(a.collectionName),
             }));
+        }
+
+        function normTracks(list) {
+          const seen = new Set();
+          const out = [];
+          list
+            .filter((a) => a && a.trackName && a.artworkUrl100)
+            .filter((a) => !NOISE_TRACK.test(a.trackName))
+            .forEach((a) => {
+              // 去重必须用「清理后的曲名」做键，不能用原始 trackName。
+              // 因为 cleanTrack 会剥掉版本后缀，若按原始名去重，
+              // "東風破" 与 "東風破 (Live)" 会各留一条，
+              // 但显示出来两条都叫「東風破」—— 用户看到的是莫名其妙的重复。
+              //
+              // 保留先出现的那条（通常来自原专辑，而不是精选集/现场盘），
+              // 这样列表里同一个名字只出现一次。
+              const name = cleanTrack(a.trackName);
+              const k = (name + "|" + String(a.artistName || "")).toLowerCase();
+              if (seen.has(k)) return;
+              seen.add(k);
+              out.push({
+                name,
+                artist: String(a.artistName || ""),
+                src: String(a.artworkUrl100).replace("100x100bb", "600x600bb"),
+                thumb: String(a.artworkUrl100),
+                date: String(a.releaseDate || "").slice(0, 4),
+                kind: "track",
+                album: cleanAlbum(a.collectionName || ""),
+              });
+            });
+          return out;
         }
 
         try {
           let cards = [];
           let head = "";
-          let artist = null;
 
-          try {
-            const s = await apiGet(BASE + "search?entity=musicArtist&limit=5&country=" + cty + "&term=" + encodeURIComponent(q));
-            if (s.resultCount) artist = s.results[0];
-          } catch (e) {}
+          if (trackMode) {
+            // ===== 单曲模式 =====
+            // 两条路径，按"用户是不是在搜某个艺人"来分：
+            //
+            // 路径一（艺人命中）：artistId → lookup entity=song 拿到他全部曲目。
+            //   这是唯一能"搜全"的办法 —— search?entity=song 的 50 条上限
+            //   和一个热门歌手的几百首歌比起来完全不够，而且结果里混满
+            //   别人的翻唱版本。
+            //
+            // 路径二（艺人没命中）：直接按曲名搜，走多地区合并，
+            //   因为歌名可能是华语，而华语库在 tw/hk 才全。
+            //
+            // 关键：两条路径的顺序不能颠倒。先搜歌名再补艺人，
+            // 会让结果里混进一堆"歌名里含这几个字"的无关曲目
+            // （实测搜 Blondie 时第 7 条是 Current Joys 的《Blondie》），
+            // 而那些东西排在正主前面，体验很糟。
 
-          if (artist) {
-            const d = await apiGet(BASE + "lookup?id=" + artist.artistId + "&entity=album&limit=200&country=" + cty);
-            const cols = (d.results || []).filter((x) => x.wrapperType === "collection" && (x.trackCount || 0) >= 4);
-            cards = norm(cols);
-            if (cards.length) head = artist.artistName + "　" + cards.length + " 张专辑 / EP";
+            // --- 先试艺人 ---
+            const a = await apiGet(
+              BASE + "search?entity=musicArtist&limit=8&country=us&term=" + encodeURIComponent(q)
+            ).catch(() => null);
+            const artists = (a && a.results) || [];
+            // 按名次优先级挑第一个「合格」候选，而不是取 results[0]：
+            // 搜「周杰伦」时 iTunes 返回 [周杰倫(正主), 周杰伦战队, ...]，
+            // 繁体的「周杰倫」与简体的「周杰伦」字符不同，必须靠简繁归一
+            // 才能匹配上；否则会选中排第二的粉丝团账号。
+            const hitArtist = artists.find((r) => artistMatchesLoose(r.artistName, q)) || null;
+
+            if (hitArtist && hitArtist.artistId) {
+              const d = await apiGet(
+                BASE + "lookup?id=" + hitArtist.artistId + "&entity=song&limit=200&country=us"
+              ).catch(() => null);
+              const raw = ((d && d.results) || []).filter((r) => r.wrapperType === "track");
+              cards = normTracks(raw);
+              if (cards.length) head = hitArtist.artistName + "　" + cards.length + " 首单曲";
+            }
+
+            // --- 艺人没命中，退回按曲名搜 ---
+            if (!cards.length) {
+              const songGroups = await hunt("search?entity=song&limit=50");
+              const raw = merge(songGroups, (r) => r.trackId);
+              cards = normTracks(raw);
+              if (cards.length) head = "「" + q + "」的单曲　" + cards.length + " 首";
+            }
+          } else {
+            // ===== 专辑模式（原逻辑，只做两点修补）=====
+            // 原实现先搜艺人再取 results[0]，且不做相关性校验。
+            // 实测 q="范特西" 时艺人搜索会命中一位古典作曲家
+            // Nancy Van de Vate，然后拉出她 33 张唱片 —— 用户看到的是
+            // 满屏无关内容，而专辑搜索根本没机会执行。
+            //
+            // 修法：艺人名必须与关键词高度重合才走「艺人全部专辑」分支，
+            // 否则直接搜专辑名。这样既保住了搜艺人名的完整体验，
+            // 又不会在搜专辑名时被错误艺人劫持。
+            // 艺人搜索同样只打 1 个请求：artistId 全球统一，
+            // 拿到 id 后 lookup 就能取全量专辑，无需多地区试。
+            const a = await apiGet(
+              BASE + "search?entity=musicArtist&limit=8&country=us&term=" + encodeURIComponent(q)
+            ).catch(() => null);
+            const artists = (a && a.results) || [];
+            const hitArtist =
+              artists.find((r) => artistMatchesLoose(r.artistName, q)) || null;
+
+            if (hitArtist && hitArtist.artistId) {
+              const d = await apiGet(
+                BASE + "lookup?id=" + hitArtist.artistId + "&entity=album&limit=200&country=us"
+              ).catch(() => null);
+              const cols = ((d && d.results) || []).filter(
+                (x) => x.wrapperType === "collection" && (x.trackCount || 0) >= 4
+              );
+              cards = normAlbums(cols);
+              if (cards.length) head = hitArtist.artistName + "　" + cards.length + " 张专辑 / EP";
+            }
+
+            if (!cards.length) {
+              const albumGroups = await hunt("search?entity=album&limit=25");
+              cards = normAlbums(merge(albumGroups, (r) => r.collectionId));
+              if (cards.length) head = "「" + q + "」的搜索结果　" + cards.length + " 张";
+            }
           }
 
           if (!cards.length) {
-            const d = await apiGet(BASE + "search?entity=album&limit=30&country=" + cty + "&term=" + encodeURIComponent(q));
-            cards = norm(d.results || []);
-            if (cards.length) head = "「" + q + "」的搜索结果　" + cards.length + " 张";
-          }
-
-          if (!cards.length) {
-            $("msg").textContent = "在「" + NAME[cty] + "」库里没搜到。换个关键词试试，或用下方“手动添加”。";
+            $("msg").textContent = trackMode
+              ? "没搜到单曲。试试只输入歌手名（能列出他的全部曲目），或缩短歌名。"
+              : "没搜到。试试只输入歌手名，或缩短关键词。";
             return;
           }
 
-          $("msg").textContent = head + "（当前地区：" + NAME[cty] + "）";
-
-          cards.forEach((c) => {
-            const b = document.createElement("button");
-            b.className = "c";
-            b.innerHTML = '<img loading="lazy" alt=""><div><b></b><span></span></div>';
-            b.querySelector("img").src = c.thumb;
-            b.querySelector("b").textContent = c.name;
-            b.querySelector("span").textContent = c.artist + (c.date ? "　" + c.date : "");
-            b.onclick = () => {
-              // 按压缩放动画
-              b.classList.remove("pulse");
-              void b.offsetWidth; // 强制重排以便重播动画
-              b.classList.add("pulse");
-              b.addEventListener("animationend", () => b.classList.remove("pulse"), { once: true });
-              add({ name: c.name, artist: c.artist, src: c.src });
-            };
-            $("res").appendChild(b);
-          });
+          // 结果存进缓存，下次同关键词直接复用
+          search._cache.set(cacheKey, { cards, head, regions: REGIONS.length });
+          paintCards(cards, head, REGIONS.length);
         } catch (e) {
-          $("msg").textContent = "搜索失败（" + (e.message || e) + "）。换个关键词重试，或用下方手动添加。";
+          $("msg").textContent = "搜索失败（" + (e.message || e) + "）。稍等一下再试 —— iTunes 有频率限制，连搜太多次会被临时拦。";
         }
+      }
+
+      /**
+       * 渲染搜索结果卡片。抽成独立函数是因为「命中缓存」和「新搜索」
+       * 两条路径都要用它，否则会写成两份几乎相同的 DOM 代码。
+       */
+      function paintCards(cards, head, regionCount) {
+        const trackMode = isTrackMode;
+        $("msg").textContent =
+          head + (regionCount > 1 ? "（已合并多地区曲库）" : "");
+        $("res").innerHTML = "";
+
+        cards.forEach((c) => {
+          const b = document.createElement("button");
+          b.className = "c";
+          b.innerHTML = '<img loading="lazy" alt=""><div><b></b><span></span></div>';
+          b.querySelector("img").src = c.thumb;
+          b.querySelector("b").textContent = c.name;
+          // 单曲卡片：第二行显示「歌手 · 所属专辑」，
+          // 这样用户能分清同名歌曲的不同版本（原版 / 精选集 / 现场）
+          b.querySelector("span").textContent = trackMode
+            ? c.artist + (c.album ? " · " + c.album : "")
+            : c.artist + (c.date ? "　" + c.date : "");
+          b.title = c.name + (c.artist ? " - " + c.artist : "") + (c.album ? "\n" + c.album : "");
+          b.onclick = () => {
+            b.classList.remove("pulse");
+            void b.offsetWidth;
+            b.classList.add("pulse");
+            b.addEventListener("animationend", () => b.classList.remove("pulse"), { once: true });
+            add({ name: c.name, artist: c.artist, src: c.src, kind: c.kind, album: c.album });
+          };
+          $("res").appendChild(b);
+        });
       }
 
       $("go").onclick = search;
@@ -2623,6 +3050,194 @@
         };
       }
 
+      // ===== 单曲版式（Track Mode）=====
+      // 两套版式，按数量自动切换：
+      //   N <= 9  → "track9"  九宫格数字叠加（3×3）
+      //   N >= 10 → "tracklist" 列表串烧（竖长条）
+      //
+      // 为什么不复用专辑版式：单曲的封面来自它所属的专辑，
+      // 9 首里往往只有 3~4 张不同的图（实测 Taylor Swift 200 首歌
+      // 落在 62 张专辑上）。做成封面墙会满屏重复图案，
+      // 所以视觉主角必须换成「排名数字 + 曲名」。
+      //
+      // 独立于 buildLayout 的理由：专辑版式的三个分支
+      // （square / stair / poem）都有逐像素回归断言锁着，
+      // 把单曲塞进去必然要动那些公式。新开一个函数，专辑版式
+      // 一行都不用改 —— 这是"不破坏现有功能"最省事的做法。
+      const TRACK_FONT = `Helvetica, Arial, sans-serif`;
+
+      // 数字叠加版的主画布基准。取 2400 是因为专辑版式也是 2400，
+      // 用户连续生成两种海报时尺寸观感一致。
+      function buildTrackLayout(N, titles, opts) {
+        const o = opts || {};
+        const W0 = 2400;
+        const PAD = 100;
+
+        if (N <= 9) {
+          // ---------- 九宫格数字叠加 ----------
+          // 实测参考图（1024×1024）：
+          //   标题字高 101 / 1024 = 9.9%
+          //   封面三列，列间距约 24px（2.3%）
+          //   白色标签条厚约 42px（4.1%），压在封面下沿之上
+          // 列数选择：目标是「尽量接近正方形，且最后一行不要只剩一个」。
+          // 直接 Math.round(sqrt(N)) 会在 N=3 时得 2 列（2+1，末行孤零零一个），
+          // 而 3 列 + 1 行显然更整齐。所以遍历候选列数，用罚分挑最好的。
+          const gap = 40;
+          const contentW = W0 - PAD * 2;
+          let cols = 1;
+          {
+            let best = Infinity;
+            for (let c = 1; c <= Math.min(3, N); c++) {
+              const r = Math.ceil(N / c);
+              if (r > 3) continue; // 九宫格版式最多 3 行
+              const lastRow = N - (r - 1) * c;
+              let score = Math.abs(c - r) * 2;      // 越方越好
+              score += Math.abs(c - 3) * 0.6;       // 整体偏三列更好看
+              if (lastRow === 1 && r > 1) score += 6; // 末行只剩一个，重罚
+              if (score < best) { best = score; cols = c; }
+            }
+          }
+          const rows = Math.ceil(N / cols);
+          const s = (contentW - (cols - 1) * gap) / cols;
+
+          // 标题区高度：标题 + 副标题（PLAYLIST 那行）
+          const titleH = Math.round(s * 0.42);
+          const subH = Math.round(s * 0.17);
+          const headGap = Math.round(s * 0.16);
+
+          // 每行总高 = 封面 + 标签条 + 歌手行 + 行间距
+          const labelH = Math.round(s * 0.175);
+          const artistH = Math.round(s * 0.15);
+          const rowGap = Math.round(s * 0.13);
+          const rowH = s + labelH + artistH + rowGap;
+
+          const gridH = rows * rowH - rowGap;
+          const head = PAD + titleH + subH + headGap;
+          const H = head + gridH + PAD;
+
+          // 每行实际格子数：前面各行填满，余数放末行。
+          // 不能 new Array(rows).fill(cols) —— 那会造出比 N 更多的格子，
+          // 绘制循环去取不存在的数据，索引错位后出现空标签。
+          // 也不能平均分（N=5、2列时变成 [2,2] 丢掉一个），必须让总和恰好等于 N。
+          const counts = [];
+          let left = N;
+          for (let r = 0; r < rows; r++) {
+            const take = Math.min(cols, left);
+            counts.push(take);
+            left -= take;
+          }
+          // 末行不足时，把它居中：视觉上比左对齐更稳
+          const lastCount = counts[counts.length - 1];
+
+          return {
+            mode: "track9",
+            W: W0,
+            H: Math.round(H),
+            side: cols,
+            rows,
+            counts,
+            lastCount,
+            s,
+            gap,
+            pad: PAD,
+            head,
+            // 标题：占据整个内容宽度，左上对齐
+            titleX: PAD,
+            titleY: PAD + Math.round(titleH * 0.78),
+            titleSize: Math.round(titleH * 0.92),
+            subX: PAD,
+            subY: PAD + titleH + Math.round(subH * 0.82),
+            subSize: Math.round(subH * 0.95),
+            labelH,
+            artistH,
+            rowGap,
+            rowH,
+            // 数字叠加：字号取封面边长的 0.78，压在右下角。
+            // 参考图里数字高度接近封面的一半以上，是视觉主角之一，
+            // 0.62 会显得偏小、像角标。
+            numSize: Math.round(s * 0.78),
+          };
+        }
+
+        // ---------- 列表串烧 ----------
+        // 实测参考图（896×1200，10 行）：
+        //   分隔线 x 从 5.2% 到 94.6%（左右各约 47px 内边距）
+        //   行距 95px / 1200 = 7.9%
+        //   缩略图约 56px = 6.3% 图宽、行高的 59%
+        //   数字占 x 70~139（字号接近行高）
+        //   大标题字高 53px = 4.4% 图宽
+        //
+        // 换算到 2400 宽：
+        //   缩略图 6.3% × 2400 ≈ 151 → 取 150
+        //   行距按「行高 ≈ 缩略图 / 0.59」得 254，但这样 10 行要 2540px 高，
+        //   比参考图的 1200/896 比例瘦长太多。参考图的行其实很紧凑，
+        //   缩略图只占行高 59% 是因为上下各有约 20% 的呼吸。
+        //   实际取 per-row 220：缩略图 150 占 68%，留白略少于参考图但更紧凑。
+        //   这是"10 行排进竖长条"的舒适区间。
+        const rowPitch = 220;
+        const thumb = 150;
+        const textGap = 40;            // 缩略图与曲名之间
+        const contentW = W0 - PAD * 2;
+
+        // 数字列宽必须按「最大编号的位数」实测算出来。
+        // 固定 150 在两位数是会撞：'10' 两个字在 172px 字号下宽约 190px，
+        // 直接压到缩略图上（第一版就是这么错的，10/11/12 全部重叠）。
+        // 用同款 bold Helvetica 量一次最宽组合，转成比例再乘字号。
+        const digits = String(N).length;
+        const numRatio = (() => {
+          const mc = document.createElement("canvas").getContext("2d");
+          mc.font = `900 200px ${TRACK_FONT}`;
+          let w = 0;
+          // 逐个数字量，取最宽的单字，再乘以位数（等宽假设，留 6% 余量）
+          for (let d = 0; d < 10; d++) w = Math.max(w, mc.measureText(String(d)).width);
+          return (w / 200) * digits * 1.06;
+        })();
+        const numSize = Math.round(thumb * 1.15);
+        const numW = Math.max(Math.round(thumb * 0.7), Math.round(numSize * numRatio));
+
+        const titleSize = 132;
+        const titleTop = PAD;
+        const titleBottom = titleTop + Math.round(titleSize * 1.05);
+        const listTop = titleBottom + 72;
+
+        const listH = N * rowPitch;
+        const H = listTop + listH + PAD;
+
+        // 分隔线：每行底部一条，最后一行的线就是列表收尾
+        const lineW = Math.round(contentW * 0.98);
+
+        return {
+          mode: "tracklist",
+          W: W0,
+          H: Math.round(H),
+          N,
+          pad: PAD,
+          rowPitch,
+          thumb,
+          numW,
+          numX: PAD,
+          // 缩略图紧跟数字列右边缘，间距固定 —— 数字右对齐后
+          // 这一列才是齐平的，不会因位数变化而忽宽忽窄
+          thumbX: PAD + numW + Math.round(thumb * 0.22),
+          textX: PAD + numW + Math.round(thumb * 0.22) + thumb + textGap,
+          textRight: PAD + contentW,
+          // 数字字号跟着缩略图走：略大于缩略图，才有"压住整行"的分量。
+          // 参考图里数字比缩略图高出约 15%。
+          numSize,
+          // 曲名字号：取整行节拍的 0.34，读起来是"标题"而非"注释"
+          titleSize: Math.round(rowPitch * 0.34),
+          artistSize: Math.round(rowPitch * 0.175),
+          head: listTop,
+          lineX0: PAD,
+          lineX1: PAD + lineW,
+          // 大标题
+          bigTitleX: PAD,
+          bigTitleY: titleTop + Math.round(titleSize * 0.86),
+          bigTitleSize: titleSize,
+          bigTitleW: contentW,
+        };
+      }
+
       // ===== 背景主题 =====
       // 每个主题给出一整套配色，白底时专辑文字/作者必须自动转深色，
       // 否则会糊成一片看不见。draw 是"额外的背景绘制"钩子（毛玻璃用）。
@@ -2803,6 +3418,298 @@
       }
 
       /**
+       * 单曲版式绘制。两套版式共用同一套排版语言：
+       *   - 字体统一 Helvetica/Arial 粗体（干练、无衬线、和数字很搭）
+       *   - 数字永远比曲名更醒目（排名是这个海报的主张）
+       *   - 曲名超长时截断加省略号，不折行 —— 折行会把行高节奏打乱
+       *
+       * 与专辑版式的关键差别：不画「专辑名」，画「曲名」；
+       * 数字是设计元素而非角标，所以字重要拉到 900 并按主题取反色。
+       */
+      function drawTrackPoster(x, L, pick, imgs, themeKey, titleTxt, authorTxt) {
+        const t = themes[themeKey] || themes.dark;
+        const isLight = themeKey === "light";
+        const isLetter = themeKey === "letter";
+
+        // 单曲海报的配色不跟随专辑主题的 albumTextColor ——
+        // 那套颜色是为「封面下方的小字」调的，用在 100px 的排名数字上
+        // 会太弱。这里显式给出三档对比度。
+        const cTitle = isLight ? "#111111" : isLetter ? "#2c2218" : "#ffffff";
+        const cNum = isLight ? "#111111" : isLetter ? "#2c2218" : "#ffffff";
+        const cTrack = isLight ? "#111111" : isLetter ? "#2c2218" : "#ffffff";
+        const cArtist = isLight ? "#767676" : isLetter ? "#7a6a52" : "#9a9a9a";
+        const cLine = isLight ? "rgba(0,0,0,0.18)" : isLetter ? "rgba(92,78,61,0.26)" : "rgba(255,255,255,0.20)";
+        // 封面缺失（空白格）时的数字兜底色：空白格是 #2a2a2d 一类的深灰，
+        // 用半透明白字最稳。
+        const cNumOver = "rgba(255,255,255,0.50)";
+        // 曲名标签条：纯白底 + 纯黑字，三个主题一致。
+        // 标签条是「压在封面下沿之上」的，它背后永远是封面而不是画布底色，
+        // 所以不需要跟着主题反色。浅色主题曾经做成黑底白字，结果九宫格里
+        // 出现九条黑杠，把封面本身的色彩全压下去了 —— 而且规格要的就是
+        // "纯白色的长条标签，里面写黑色歌名"。
+        const cChipBg = "#ffffff";
+        const cChipText = "#111111";
+
+        /**
+         * 压在封面上的巨大数字 —— 颜色必须由**封面自身明暗**决定。
+         *
+         * 原来按主题硬编码（深色主题白字、浅色/米色主题深字），
+         * 实测在橙棕色封面上，透明度 0.34 的深色数字几乎与底色融为一体，
+         * 整格只剩封面、排名完全丢失。排名是这张海报的主张，不能靠猜。
+         *
+         * 做法：把封面缩到 16×16 取数字所在的右下区域，算感知亮度，
+         * 然后反推所需透明度，保证「数字」与「底色」的亮度差 ≥ 0.35。
+         * 画布被污染（理论上不会，封面都走 CORS）时回落到白色 0.5。
+         */
+        const overlayNumColor = (img) => {
+          const S = 16;
+          let lum = 0.45;
+          try {
+            const c = document.createElement("canvas");
+            c.width = c.height = S;
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.drawImage(img, 0, 0, S, S);
+            // 只采数字实际压着的那块：右侧 45%~100%、纵向 30%~85%
+            const x0 = Math.round(S * 0.45);
+            const y0 = Math.round(S * 0.3);
+            const d = g.getImageData(x0, y0, S - x0, Math.round(S * 0.55) + 1 - y0).data;
+            let sum = 0;
+            let n = 0;
+            for (let k = 0; k < d.length; k += 4) {
+              // Rec.709 感知亮度；直接算术平均会被高饱和色带偏
+              sum += 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2];
+              n++;
+            }
+            if (n) lum = sum / n / 255;
+          } catch (e) {}
+          // 底色偏暗 → 亮数字；底色偏亮 → 深数字
+          const useLight = lum < 0.5;
+          const target = 0.35;
+          let a = useLight ? target / (1 - lum) : target / lum;
+          a = Math.max(0.3, Math.min(0.72, a));
+          return useLight ? `rgba(255,255,255,${a.toFixed(2)})` : `rgba(17,17,17,${a.toFixed(2)})`;
+        };
+
+        const bold = (px) => `900 ${px}px ${TRACK_FONT}`;
+        const med = (px) => `700 ${px}px ${TRACK_FONT}`;
+
+        x.textAlign = "left";
+        x.textBaseline = "alphabetic";
+
+        // ---------- 版式 B：九宫格数字叠加 ----------
+        if (L.mode === "track9") {
+          // 大标题
+          x.fillStyle = cTitle;
+          x.font = bold(L.titleSize);
+          let big = (titleTxt || "MY FAVORITE TRACKS").toUpperCase();
+          // 一行放不下就按字号缩，绝不折行 —— 这个标题是版面的横向基准
+          big = fitShrink(x, big, L.W - L.pad * 2, L.titleSize, bold);
+          x.fillText(big, L.titleX, L.titleY);
+
+          // 副标题
+          x.fillStyle = cArtist;
+          x.font = med(L.subSize);
+          x.fillText("PLAYLIST", L.subX, L.subY);
+
+          let i = 0;
+          for (let r = 0; r < L.rows; r++) {
+            const cnt = L.counts[r] || 0;
+            // 末行不满时整体右移半个格位，视觉居中。
+            // 左对齐会让末行顶着左边、右边空一大块，看起来像没画完。
+            const shift = (L.side - cnt) * (L.s + L.gap) * 0.5;
+            for (let c = 0; c < cnt; c++) {
+              const it = pick[i];
+              const img = imgs[i];
+              if (!it) break;
+
+              const cw = L.s;
+              const cx = L.pad + shift + c * (cw + L.gap);
+              const cy = L.head + r * L.rowH;
+
+              // 封面
+              if (img) drawCover(x, img, cx, cy, cw);
+              else {
+                x.fillStyle = t.emptyCell;
+                x.fillRect(cx, cy, cw, cw);
+              }
+
+              // 巨大数字压右下角，半透明。
+              // 位置要点：基线必须落在标签条之上，否则数字下半截
+              // 会被标签条盖掉 —— 参考图里数字是完整清晰的。
+              // 标签条顶边在 cy + cw - chipH/2 处，所以数字基线取
+              // cw * 0.80 留出安全余量。
+              // 颜色逐格按封面明暗反推（见 overlayNumColor），
+              // 同一张海报里九格数字可能是黑白混的 —— 这是对的，
+              // 每格都要保证能看清。
+              const nStr = String(i + 1);
+              x.font = bold(L.numSize);
+              x.fillStyle = img ? overlayNumColor(img) : cNumOver;
+              x.textAlign = "right";
+              const numRight = cx + cw - Math.round(cw * 0.02);
+              const numBase = cy + Math.round(cw * 0.80);
+              x.fillText(nStr, numRight, numBase);
+              x.textAlign = "left";
+
+              // 白色标签条：压在封面下沿之上（不是贴着下面），
+              // 这样它读起来是"盖在照片上的标签"而不是"照片的说明区"
+              const chipH = L.labelH;
+              const chipY = cy + cw - Math.round(chipH * 0.5);
+              x.fillStyle = cChipBg;
+              x.fillRect(cx, chipY, cw, chipH);
+              // 白标签在浅色主题（画布 #f5f5f5）上会与底色糊成一片，
+              // 只剩黑色曲名悬在空中。给一道比画布略深的极细描边，
+              // 让它始终是个"贴纸"而不是"消失的底"。
+              x.strokeStyle = isLight ? "rgba(0,0,0,0.16)" : "rgba(0,0,0,0.20)";
+              x.lineWidth = 2;
+              x.strokeRect(cx + 1, chipY + 1, cw - 2, chipH - 2);
+
+              // 曲名：缩字号而不是截断。
+              // 截断会把 "APOCALYPSE DREAMS" 切成 "APOCALYPSE …"，
+              // 而曲名恰恰是这张海报唯一的信息载体，不能省。
+              x.fillStyle = cChipText;
+              const labelMaxW = cw - Math.round(cw * 0.08);
+              const labelSize = shrinkToWidth(
+                x,
+                it.name.toUpperCase(),
+                labelMaxW,
+                Math.round(chipH * 0.62),
+                bold,
+                11
+              );
+              x.textAlign = "center";
+              x.fillText(it.name.toUpperCase(), cx + cw / 2, chipY + Math.round(chipH * 0.70));
+              x.textAlign = "left";
+
+              // 歌手名在标签条下方，同样缩字号
+              x.fillStyle = cArtist;
+              const aSize = shrinkToWidth(
+                x,
+                (it.artist || "").toUpperCase(),
+                labelMaxW,
+                Math.round(L.artistH * 0.78),
+                med,
+                10
+              );
+              x.textAlign = "center";
+              x.fillText((it.artist || "").toUpperCase(), cx + cw / 2, chipY + chipH + Math.round(L.artistH * 0.85));
+              x.textAlign = "left";
+
+              i++;
+            }
+          }
+          return;
+        }
+
+        // ---------- 版式 A：列表串烧 ----------
+        // 大标题
+        x.fillStyle = cTitle;
+        x.font = bold(L.bigTitleSize);
+        let bt = (titleTxt || "MY FAVORITE TRACKS").toUpperCase();
+        bt = fitShrink(x, bt, L.bigTitleW, L.bigTitleSize, bold);
+        x.fillText(bt, L.bigTitleX, L.bigTitleY);
+
+        for (let i = 0; i < L.N; i++) {
+          const it = pick[i];
+          if (!it) break;
+          const img = imgs[i];
+
+          const rowTop = L.head + i * L.rowPitch;
+          const rowMid = rowTop + L.rowPitch / 2;
+
+          // 排名数字：右对齐到统一基线，垂直居中于行。
+          // 必须右对齐而不是左对齐 —— 否则 1~9 贴着左边、10 以后
+          // 突然变宽，数字与缩略图之间的缝一会儿宽一会儿窄，
+          // 整列看起来是歪的。右对齐后所有编号的右边缘齐平。
+          x.fillStyle = cNum;
+          x.font = bold(L.numSize);
+          x.textAlign = "right";
+          x.fillText(String(i + 1), L.numX + L.numW, rowMid + Math.round(L.numSize * 0.36));
+          x.textAlign = "left";
+
+          // 缩略封面：垂直居中于行
+          const thY = rowMid - L.thumb / 2;
+          if (img) drawCover(x, img, L.thumbX, thY, L.thumb);
+          else {
+            x.fillStyle = t.emptyCell;
+            x.fillRect(L.thumbX, thY, L.thumb, L.thumb);
+          }
+
+          // 曲名：大字白色粗体。超长时缩字号而不是截断 ——
+          // 列表版每行有整幅宽度可用，缩一点字号几乎看不出来，
+          // 但截断会让曲名失去辨识度。
+          x.fillStyle = cTrack;
+          const nameMaxW = L.textRight - L.textX;
+          const nameTxt = it.name.toUpperCase();
+          x.font = bold(L.titleSize);
+          if (x.measureText(nameTxt).width > nameMaxW) {
+            shrinkToWidth(x, nameTxt, nameMaxW, L.titleSize, bold, 30);
+          } else {
+            x.font = bold(L.titleSize);
+          }
+          x.fillText(nameTxt, L.textX, rowMid + Math.round(L.titleSize * 0.06));
+
+          // 歌手名：小字灰色
+          x.fillStyle = cArtist;
+          const artistTxt = (it.artist || "");
+          x.font = med(L.artistSize);
+          if (x.measureText(artistTxt).width > nameMaxW) {
+            shrinkToWidth(x, artistTxt, nameMaxW, L.artistSize, med, 16);
+          } else {
+            x.font = med(L.artistSize);
+          }
+          x.fillText(artistTxt, L.textX, rowMid + Math.round(L.titleSize * 0.06) + Math.round(L.artistSize * 1.32));
+
+          // 分隔线：贯穿整行底部，极淡
+          x.strokeStyle = cLine;
+          x.lineWidth = 2;
+          x.beginPath();
+          const lineY = rowTop + L.rowPitch - 6;
+          x.moveTo(L.lineX0, lineY);
+          x.lineTo(L.lineX1, lineY);
+          x.stroke();
+        }
+
+        // 落款：列表版右下角，谦逊地待着，不抢戏
+        if (authorTxt) {
+          x.fillStyle = cArtist;
+          x.font = med(34);
+          x.textAlign = "right";
+          x.fillText("by " + authorTxt, L.W - L.pad, L.H - Math.round(L.pad * 0.45));
+          x.textAlign = "left";
+        }
+      }
+
+      /**
+       * 缩字号直到塞进 maxW，返回**最终字号**（不是文本）。
+       * 用于九宫格里的曲名/歌手名：这些文字必须完整显示，
+       * 截断会把 "APOCALYPSE DREAMS" 变成 "APOCALYPSE …"，
+       * 而曲名是这张海报唯一的信息载体。
+       */
+      function shrinkToWidth(x, text, maxW, startPx, fontFn, minPx) {
+        let px = startPx;
+        const floor = minPx || 10;
+        x.font = fontFn(px);
+        while (px > floor && x.measureText(text).width > maxW) {
+          px -= 2;
+          x.font = fontFn(px);
+        }
+        return px;
+      }
+
+      /**
+       * 单行放不下时按字号递减，直到塞进 maxW。
+       * 用于大标题 —— 折行会破坏横向基准线，缩字号是更安全的选择。
+       */
+      function fitShrink(x, text, maxW, startPx, fontFn) {
+        let px = startPx;
+        while (px > 20 && x.measureText(text).width > maxW) {
+          px -= 4;
+          x.font = fontFn(px);
+        }
+        return text;
+      }
+
+      /**
        * 绘制海报
        * @param {boolean} isFirstTime
        *   true  = 首次生成 / 专辑变动后重新生成 → 显示遮罩、加载封面
@@ -2841,7 +3748,11 @@
           const total = pick.length;
           const titleSizeKey = $("titleSizeSel").value;
           const titleFontSize = titleFontSizeOf(titleSizeKey);
-          const L = buildLayout(total, showInfo, layoutPref, titleSizeKey, titleTxt, fontKey);
+          // 单曲模式走独立版式，绝不进 buildLayout —— 那个函数里
+          // 三个分支的公式都被逐像素断言锁着，不能碰。
+          const L = isTrackMode
+            ? buildTrackLayout(total, null, { titleSize: titleSizeKey })
+            : buildLayout(total, showInfo, layoutPref, titleSizeKey, titleTxt, fontKey);
 
           // 图片：首次走网络 + 写入 imageCache；即选即看时全部命中缓存
           let imgs;
@@ -2869,6 +3780,29 @@
 
           // 背景（各主题都是纯色底）
           paintBackground(x, W, L.H, themeKey);
+
+          // ===== 单曲版式：提前返回 =====
+          // 两套单曲版式与专辑版式的绘制逻辑没有一行可复用
+          // （专辑是"封面 + 可选小字"，单曲是"大数字 + 曲名 + 分隔线"），
+          // 所以单独成函数并在这里分流，画完就结束，不往下走专辑的绘制路径。
+          if (L.mode === "track9" || L.mode === "tracklist") {
+            drawTrackPoster(x, L, pick, imgs, themeKey, titleTxt, authorTxt);
+            posterData = { pick, imgs, L, miss: 0 };
+            hasRendered = true;
+            cv.style.display = "block";
+            $("dl").style.display = "";
+            syncSaveImg(cv);
+
+            const tName = L.mode === "track9" ? "九宫格单曲" : "列表单曲";
+            if (!isFirstTime) {
+              $("warn").textContent = `${tName} · ${themeKey === "light" ? "极简白" : themeKey === "letter" ? "米色信笺" : "深邃黑"} · 已实时更新`;
+            } else {
+              $("warn").textContent = IS_TOUCH
+                ? `生成完成（${tName}）！长按上方图片即可存入相册。`
+                : `生成完成（${tName}）！点击下载图片。`;
+            }
+            return;
+          }
 
           // ===== 诗页堆叠：两页细线纸框 =====
           // 先画后页（偏左上），再画前页（偏右下）盖住它，
