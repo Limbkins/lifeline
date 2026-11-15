@@ -996,12 +996,141 @@
         color: #f2f2f2;
         margin-bottom: 3px;
       }
+      /* 「推荐」小徽章：只给剪贴板那一条，别三个都标等于都没标 */
+      .expopt b em {
+        font-style: normal;
+        font-size: 11px;
+        font-weight: 600;
+        color: #7fd1a8;
+        background: rgba(127, 209, 168, 0.13);
+        border: 1px solid rgba(127, 209, 168, 0.28);
+        border-radius: 5px;
+        padding: 1px 5px;
+        margin-left: 2px;
+        vertical-align: 1px;
+      }
+
+      /* ── 步骤面板 ──────────────────────────────────────────
+         用户点完选项最想问的是"接下来呢"。这里不关对话框，
+         原地把它换成编号步骤，让他不用带着疑问去猜。 */
+      .stepbox { display: flex; flex-direction: column; gap: 2px; }
+      .stepbox .ok {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 12px;
+        padding: 9px 12px;
+        border-radius: 9px;
+        background: rgba(127, 209, 168, 0.1);
+        border: 1px solid rgba(127, 209, 168, 0.26);
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #7fd1a8;
+      }
+      .stepbox .ok svg { width: 14px; height: 14px; flex: none; }
+      .stepbox h4 {
+        margin: 12px 0 7px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: #75757b;
+        text-transform: uppercase;
+      }
+      .stepbox h4:first-of-type { margin-top: 0; }
+      .steps { list-style: none; margin: 0; padding: 0; }
+      .steps li {
+        position: relative;
+        padding: 0 0 11px 26px;
+        font-size: 12.5px;
+        line-height: 1.62;
+        color: #c8c8cd;
+      }
+      .steps li::before {
+        content: attr(data-n);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 17px;
+        height: 17px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.09);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        font-size: 10.5px;
+        font-weight: 600;
+        line-height: 16px;
+        text-align: center;
+        color: #9a9a9f;
+      }
+      .steps li:last-child { padding-bottom: 2px; }
+      .steps li b { color: #f2f2f2; font-weight: 600; }
+      .steps li kbd {
+        display: inline-block;
+        padding: 0 4px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        font-family: inherit;
+        font-size: 11.5px;
+        color: #e2e2e6;
+      }
+      .steps li code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11.5px;
+        color: #9fd8ee;
+      }
+      .stepbox .note {
+        margin: 11px 0 0;
+        font-size: 11.5px;
+        line-height: 1.6;
+        color: #7a7a80;
+      }
+      .stepbox .alt {
+        margin: 13px 0 0;
+        padding: 10px 12px;
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        font-size: 11.5px;
+        line-height: 1.62;
+        color: #8f8f96;
+      }
+      .stepbox .alt b { color: #d6d6da; font-weight: 600; }
+      .stepbox .back {
+        display: block;
+        width: 100%;
+        margin-top: 12px;
+        padding: 9px;
+        border-radius: 9px;
+        background: transparent;
+        border: 1px dashed rgba(255, 255, 255, 0.16);
+        color: #8f8f96;
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+      .stepbox .back:hover { color: #c8c8cd; border-color: rgba(255, 255, 255, 0.3); }
       .expopt span {
         display: block;
         font-size: 12px;
         line-height: 1.55;
         color: #8a8a90;
       }
+      /* 步骤页里「共 N 首，按名次排列」已经没用了 ——
+         页面标题都换成「接下来怎么用」了，这句属于选项页的语境。
+         留着只会把有限的纵向空间挤掉，移动端尤其明显。 */
+      .expdlg .expbox[data-view="steps"] .expsub { display: none; }
+
+      /* 移动端纵向本来就紧，步骤又多，间距整体收一档 */
+      @media (max-width: 480px) {
+        .expbox { padding: 20px 18px 16px; max-height: 90vh; }
+        .steps li { padding-bottom: 9px; font-size: 12px; line-height: 1.58; }
+        .stepbox .ok { margin-bottom: 10px; padding: 8px 11px; }
+        .stepbox .alt { margin-top: 11px; padding: 9px 11px; font-size: 11px; }
+        .stepbox .note { margin-top: 9px; font-size: 11px; }
+        .stepbox h4 { margin: 10px 0 6px; }
+      }
+
       .exptip {
         margin: 14px 0 0;
         padding: 10px 12px;
@@ -1013,6 +1142,16 @@
         color: #d8b276;
       }
       .exptip:empty { display: none; }
+      /* 「这里只是清单」的常驻说明：位置在提示条和按钮之间，
+         用最轻的字重，不抢步骤的注意力，但始终在。 */
+      .expnote {
+        margin: 12px 0 0;
+        font-size: 11.5px;
+        line-height: 1.6;
+        color: #75757b;
+      }
+      .expnote b { color: #a8a8ae; font-weight: 600; }
+      .expdlg .expbox[data-view="steps"] .expnote { display: none; }
       .expclose {
         display: block;
         width: 100%;
@@ -1456,21 +1595,27 @@
       <div class="expbox" role="dialog" aria-modal="true" aria-labelledby="expTitle">
         <h3 id="expTitle">导出歌单</h3>
         <p id="expSub" class="expsub"></p>
-        <div class="exps">
-          <button class="expopt" data-k="m3u">
-            <b>.m3u8 歌单文件</b>
-            <span>Apple Music、MusicFree、VLC 可读。含曲名、歌手、时长和 Apple Music 直链。网易云不认这种文件（它只当本地音频索引）。</span>
-          </button>
-          <button class="expopt" data-k="txt">
-            <b>.txt 纯文本清单</b>
-            <span>一行一首「曲名 - 歌手」。配 Apple 快捷指令一键建歌单。</span>
-          </button>
-          <button class="expopt" data-k="copy">
-            <b>复制到剪贴板</b>
-            <span>同上内容，直接贴进各平台「导入歌单」输入框。</span>
-          </button>
+        <!-- 选项面板：选完一个就把这里换成「怎么用」的步骤 -->
+        <div id="expPick">
+          <div class="exps">
+            <button class="expopt" data-k="copy">
+              <b>复制到剪贴板　<em>推荐</em></b>
+              <span>一行一首「艺人 - 曲名」，共 3 步就能变成网易云歌单。不用先存文件。</span>
+            </button>
+            <button class="expopt" data-k="m3u">
+              <b>.m3u8 歌单文件</b>
+              <span>含曲名、歌手、时长和 Apple Music 直链，Soundiiz 可直接读它建歌单。VLC、MusicFree 也能播。</span>
+            </button>
+            <button class="expopt" data-k="txt">
+              <b>.txt 纯文本清单</b>
+              <span>内容和「复制」一样，只是存成文件。适合要先改几行再导入的情况。</span>
+            </button>
+          </div>
         </div>
+        <!-- 步骤面板 -->
+        <div id="expSteps" hidden></div>
         <p id="expTip" class="exptip"></p>
+        <p class="expnote">导出的只是<b>曲目清单</b>，不含音频文件。选一种格式拿到清单后，靠 Soundiiz 之类的工具把它变成平台里的歌单。</p>
         <button class="expclose" id="expClose">取消</button>
       </div>
     </div>
@@ -4274,9 +4419,15 @@
       }
 
       function buildTxt(rows) {
-        // Apple 快捷指令「TXT to Playlist」的要求：一行一首，
-        // 格式「曲名 - 歌手」。实测 1000 首约 94% 命中。
-        return rows.map((r) => (r.artist ? r.name + " - " + r.artist : r.name)).join("\n") + "\n";
+        // 一行一首，**艺人在前**：`Artist - Title`。
+        //
+        // 这个顺序不是随便定的。Soundiiz 的纯文本导入文档原话是
+        // "Use Artist - Title, with a space on each side of the hyphen"，
+        // 它拿连字符左边当艺人、右边当曲名去曲库匹配。写成
+        // `曲名 - 歌手` 的话，它会把曲名当成艺人去搜，命中率极低，
+        // 而且匹配错的版本还特别安静（不报错，只是给你一张错歌单）。
+        // TuneMyMusic 的「任意文本」入口同理。
+        return rows.map((r) => (r.artist ? r.artist + " - " + r.name : r.name)).join("\n") + "\n";
       }
 
       function downloadText(text, filename, mime) {
@@ -4315,8 +4466,8 @@
         $("expSub").textContent = "共 " + rows.length + " 首，按海报上的名次排列。";
 
         // 提示区：只显示「当前必须提醒的」那几条，按严重程度堆叠。
-        // 别把 m3u8 的缺点无条件写在这里 —— 用户如果选的是「复制到剪贴板」，
-        // 那句「.m3u8 会被网易云当本地索引」就是无关信息，只会添乱。
+        // 别把某个格式的缺点无条件写在这里 —— 用户如果选的是「复制」，
+        // 那句「.m3u8 网易云不认」就是无关信息，只会添乱。
         const tips = [];
         if (noLink) {
           // 区分两种成因，否则「专辑没有直链」会被说成「手动添加的图片」，
@@ -4327,7 +4478,7 @@
           if (nManual > 0) why.push(nManual + " 首是手动添加的（没有来源）");
           if (nAlbumNoLink > 0) why.push(nAlbumNoLink + " 张是专辑（专辑不导出单曲链接）");
           tips.push(noLink + " 条没有 Apple Music 直链：" + (why.join("、") || "来源缺失") +
-            "，导出时会写成注释行，不影响其余曲目。");
+            "，.m3u8 里会写成注释行，不影响其余曲目。");
         }
         if (nTrack > 0 && nTrack < rows.length) {
           tips.push(
@@ -4335,56 +4486,141 @@
               "建议切到单曲模式重新收集。"
           );
         }
-        if (!tips.length) {
-          tips.push("导进网易云最快的方式：用它 App 的「一键导入外部音乐 → 截图 OCR」，直接选这张海报。");
-        }
-        $("expTip").textContent = tips.join("　");
+        const tipHtml = tips.join("　");
+        $("expTip").textContent = tipHtml;
 
         const dlg = $("expDlg");
+        const pick = $("expPick");
+        const stepsBox = $("expSteps");
+        const closeBtn = $("expClose");
+
+        // 回到选项态：点「换一种格式」和不关重开都会走这里
+        const showPick = () => {
+          pick.hidden = false;
+          stepsBox.hidden = true;
+          stepsBox.innerHTML = "";
+          $("expTitle").textContent = "导出歌单";
+          $("expTip").textContent = tipHtml;
+          closeBtn.textContent = "取消";
+          // data-view 只用来给 CSS 收掉步骤页里的副标题，
+          // 不在 JS 里反复改 style，避免和 media query 打架
+          dlg.querySelector(".expbox").dataset.view = "pick";
+        };
+
         dlg.hidden = false;
+        showPick();
 
         const close = () => {
           dlg.hidden = true;
           dlg.onclick = null;
+          showPick();
         };
-        $("expClose").onclick = close;
+        closeBtn.onclick = close;
         // 点遮罩关闭（点内容区不关）
         dlg.onclick = (e) => {
           if (e.target === dlg) close();
         };
 
-        // 选项点击：只绑一次，用 onclick 覆盖式赋值避免重复绑定
+        // 选项点击：执行导出，然后**不关闭**，原地换成「接下来怎么用」。
+        // 用户点完按钮的那一刻正是他最想问"然后呢"的时候，
+        // 这时候把对话框关掉，等于把答案藏起来了。
         dlg.querySelectorAll(".expopt").forEach((btn) => {
           btn.onclick = () => {
             const k = btn.dataset.k;
-            close();
             if (k === "m3u") {
               downloadText(buildM3U8(rows, title), base + ".m3u8", "audio/x-mpegurl");
               toast("已下载 " + base + ".m3u8", "↓");
               $("msg").textContent = "已导出 " + rows.length + " 首歌单文件。";
+              showSteps("m3u", "已下载 " + base + ".m3u8", rows.length);
             } else if (k === "txt") {
               downloadText(buildTxt(rows), base + ".txt", "text/plain");
               toast("已下载 " + base + ".txt", "↓");
-              $("msg").textContent = "已导出纯文本清单，可配合 Apple 快捷指令建歌单。";
+              $("msg").textContent = "已导出纯文本清单，见下方导入步骤。";
+              showSteps("txt", "已下载 " + base + ".txt", rows.length);
             } else {
               copyText(
                 buildTxt(rows),
                 () => {
                   toast("已复制 " + rows.length + " 首到剪贴板", "✓");
-                  $("msg").textContent = "清单已复制，可直接贴进「导入歌单」输入框。";
+                  $("msg").textContent = "清单已复制，见下方导入步骤。";
+                  showSteps("copy", "已复制 " + rows.length + " 首到剪贴板", rows.length);
                 },
-                base
+                base,
+                // 剪贴板被拒 → 已自动存成 .txt，步骤得切到文件版，
+                // 否则还写着"按 ⌘V 粘贴"，而用户手上只有一个文件
+                () => showSteps("txt", "复制被浏览器拒绝，已改为下载 .txt", rows.length)
               );
             }
           };
         });
+
+        // 各格式的「往下怎么用」。步骤都按真实界面用词写，
+        // 不写"导入歌单"这种笼统说法 —— 用户照着点要能点到。
+        function showSteps(k, okText, n) {
+          const ICON_OK =
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+            'stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+          // 两种格式最终都要经过 Soundiiz，步骤主干一致，
+          // 只有「第一步从哪拿内容」不同。
+          const isCopy = k === "copy";
+          const isM3U = k === "m3u";
+
+          const wayIn = isCopy
+            ? '<li data-n="2">在 <b>From Plain Text</b>（纯文本）框里按 <kbd>⌘V</kbd> 粘贴。' +
+              '它认 <code>艺人 - 曲名</code> 这个格式，正好是刚才复制的样子。</li>'
+            : isM3U
+              ? '<li data-n="2">回到 Soundiiz，<b>Import Playlist → From File</b>，' +
+                '选下载好的 <code>.m3u8</code> 文件。它接受 M3U / M3U8。</li>'
+              : '<li data-n="2">回到 Soundiiz，<b>Import Playlist → From File</b>，' +
+                '选下载好的 <code>.txt</code> 文件。</li>';
+
+          const html =
+            '<div class="stepbox">' +
+            '<div class="ok">' + ICON_OK + "<span>" + okText + "</span></div>" +
+
+            "<h4>变成网易云歌单</h4>" +
+            '<ol class="steps">' +
+            '<li data-n="1">打开 <b>soundiiz.com</b>，用邮箱注册（免费版够用）。</li>' +
+            wayIn +
+            '<li data-n="3">连接 <b>网易云音乐</b>：平台列表里选它 → <b>Connect</b> → ' +
+            "会出现一张二维码，用网易云 App 右上角的扫码确认（不用输密码）。</li>" +
+            '<li data-n="4">选 <b>Transfer</b>，源选刚导入的清单，目标选网易云 → ' +
+            "<b>Confirm</b>。匹配完歌单就直接出现在你网易云的「我的歌单」里。</li>" +
+            "</ol>" +
+            '<p class="note">免费版：每次最多 200 首，歌单数量不限、不过期。' +
+            (n > 200 ? "你这次有 " + n + " 首，超过的部分要分批。" : "你这次 " + n + " 首，一次就够。") +
+            "</p>" +
+            (isM3U
+              ? '<p class="note">Soundiiz 里第 4 步的「目标」可以换成 Apple Music、Spotify 等任一平台。' +
+                "但别双击这个文件指望 Apple 的「音乐」App 打开它 —— 它只认本地音频文件，导入网页链接会得到一张空歌单。</p>"
+              : "") +
+
+            '<p class="alt"><b>不想用第三方工具？</b>网易云 App 里也能直接吃这张海报：' +
+            "「我的」→ 心动模式上方三点 → <b>一键导入外部音乐</b> → 底部<b>截图导入</b> → " +
+            "选你刚生成的那张图。它按 OCR 认曲名，所以海报上的字越大越准 —— " +
+            "一次最多 9 张截图，但海报一张就够。</p>" +
+
+            '<button class="back" id="expBack" type="button">换一种格式</button>' +
+            "</div>";
+
+          pick.hidden = true;
+          stepsBox.hidden = false;
+          stepsBox.innerHTML = html;
+          $("expTitle").textContent = "接下来怎么用";
+          $("expTip").textContent = ""; // 步骤里已经说清楚了，别再顶一条黄条
+          closeBtn.textContent = "完成";
+          dlg.querySelector(".expbox").dataset.view = "steps";
+          $("expBack").onclick = showPick;
+        }
       };
 
       // 复制到剪贴板：clipboard API 在 file:// 下常被拒，
       // 必须留 execCommand 的退路，否则本地打开时就废了。
       // 两条路都失败时**自动降级成下载 .txt** —— 只弹一句"复制失败"
       // 等于把用户卡死在这儿，他连内容都拿不到。
-      function copyText(text, done, fallbackName) {
+      // onFallback：降级后要换成「文件版」的步骤，不能还挂着"已复制"。
+      function copyText(text, done, fallbackName, onFallback) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(done).catch(() => legacy());
         } else {
@@ -4410,6 +4646,7 @@
             downloadText(text, (fallbackName || "playlist") + ".txt", "text/plain");
             toast("浏览器不允许复制，已改为下载 .txt", "↓");
             $("msg").textContent = "已下载纯文本清单（浏览器拒绝了剪贴板权限）。";
+            if (onFallback) onFallback();
           }
         }
       }
