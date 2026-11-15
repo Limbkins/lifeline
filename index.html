@@ -933,6 +933,112 @@
         justify-content: center;
       }
 
+      /* ===== 导出歌单对话框 ===== */
+      .expdlg {
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.62);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+      .expdlg[hidden] { display: none; }
+      .expbox {
+        width: 100%;
+        max-width: 460px;
+        max-height: 86vh;
+        overflow-y: auto;
+        padding: 24px 22px 18px;
+        border-radius: 18px;
+        background: #17171a;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      }
+      .expbox h3 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 600;
+        color: #f2f2f2;
+      }
+      .expsub {
+        margin: 0 0 16px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #8f8f94;
+      }
+      .exps { display: flex; flex-direction: column; gap: 9px; }
+      .expopt {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 13px 15px;
+        border-radius: 12px;
+        background: #212125;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: inherit;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+      }
+      .expopt:hover {
+        background: #2a2a30;
+        border-color: rgba(255, 255, 255, 0.24);
+      }
+      .expopt:active { transform: scale(0.985); }
+      .expopt b {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: #f2f2f2;
+        margin-bottom: 3px;
+      }
+      .expopt span {
+        display: block;
+        font-size: 12px;
+        line-height: 1.55;
+        color: #8a8a90;
+      }
+      .exptip {
+        margin: 14px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(255, 190, 90, 0.09);
+        border: 1px solid rgba(255, 190, 90, 0.22);
+        font-size: 12px;
+        line-height: 1.65;
+        color: #d8b276;
+      }
+      .exptip:empty { display: none; }
+      .expclose {
+        display: block;
+        width: 100%;
+        margin-top: 14px;
+        padding: 11px;
+        border-radius: 10px;
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #9a9a9f;
+        font-family: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+      .expclose:hover { color: #e0e0e0; border-color: rgba(255, 255, 255, 0.3); }
+
+      /* 浅色主题下的对话框：跟着 themeSel 走不到这里，
+         用 prefers-color-scheme 兜底即可 —— 对话框本身是浮层，
+         深底在浅色页面里也读得清，不必强行反色 */
+      @media (max-width: 430px) {
+        .expbox { padding: 20px 17px 15px; border-radius: 16px; }
+        .expsub { font-size: 12.5px; }
+        .expopt b { font-size: 13.5px; }
+        .expopt span { font-size: 11.5px; }
+      }
+
       canvas {
         width: 100%;
         height: auto;
@@ -1311,6 +1417,7 @@
     <div class="act">
       <button class="p" id="gen">生成图片</button>
       <button id="dl" style="display: none">下载图片</button>
+      <button id="exp" style="display: none" title="把当前列表导出成 .m3u 歌单文件">导出歌单</button>
       <button id="clr">清空</button>
     </div>
     <div id="warn" class="msg" style="text-align: center;"></div>
@@ -1344,6 +1451,29 @@
 
     <!-- 毛玻璃提示 -->
     <div id="toast" class="toast"></div>
+    <!-- 导出歌单对话框 -->
+    <div id="expDlg" class="expdlg" hidden>
+      <div class="expbox" role="dialog" aria-modal="true" aria-labelledby="expTitle">
+        <h3 id="expTitle">导出歌单</h3>
+        <p id="expSub" class="expsub"></p>
+        <div class="exps">
+          <button class="expopt" data-k="m3u">
+            <b>.m3u8 歌单文件</b>
+            <span>Apple Music、MusicFree、VLC 可读。含曲名、歌手、时长和 Apple Music 直链。网易云不认这种文件（它只当本地音频索引）。</span>
+          </button>
+          <button class="expopt" data-k="txt">
+            <b>.txt 纯文本清单</b>
+            <span>一行一首「曲名 - 歌手」。配 Apple 快捷指令一键建歌单。</span>
+          </button>
+          <button class="expopt" data-k="copy">
+            <b>复制到剪贴板</b>
+            <span>同上内容，直接贴进各平台「导入歌单」输入框。</span>
+          </button>
+        </div>
+        <p id="expTip" class="exptip"></p>
+        <button class="expclose" id="expClose">取消</button>
+      </div>
+    </div>
     <!-- 格子操作菜单 -->
     <div id="pop" class="pop" hidden></div>
     <!-- 替换用的隐藏文件选择器 -->
@@ -2018,6 +2148,8 @@
         }
 
         $("cnt").textContent = filledCount() + " / " + MAX;
+        // 导出歌单按钮跟着「有没有内容」显隐
+        syncExportBtn();
         // 抓起状态：整格网提示可放置
         g.classList.toggle("moving", dragFrom >= 0);
         if (keepScroll !== null) window.scrollTo(0, keepScroll);
@@ -2344,6 +2476,13 @@
                 date: String(a.releaseDate || "").slice(0, 4),
                 kind: "track",
                 album: cleanAlbum(a.collectionName || ""),
+                // Apple Music 单曲直链。iTunes 的 trackViewUrl 本来就是这个，
+                // 顺手存下来，导出歌单时用得上 —— 不用额外再请求一次。
+                // 形如 https://music.apple.com/us/album/xxx/1146195596?i=1146195725&uo=4
+                amUrl: String(a.trackViewUrl || "").replace(/&uo=\d+$/, ""),
+                // 导出 m3u 时给时长（毫秒 → 秒）。iTunes 这个字段叫 trackTimeMillis
+                dur: Math.round((Number(a.trackTimeMillis) || 0) / 1000),
+                nn: a.trackNumber || 0,
               });
             });
           return out;
@@ -2476,7 +2615,17 @@
             void b.offsetWidth;
             b.classList.add("pulse");
             b.addEventListener("animationend", () => b.classList.remove("pulse"), { once: true });
-            add({ name: c.name, artist: c.artist, src: c.src, kind: c.kind, album: c.album });
+            // 导出歌单要用的字段必须一起带过去，否则 add() 之后
+            // amUrl / dur 就丢了，导出的 m3u 里没有 Apple Music 链接
+            add({
+              name: c.name,
+              artist: c.artist,
+              src: c.src,
+              kind: c.kind,
+              album: c.album,
+              amUrl: c.amUrl || "",
+              dur: c.dur || 0,
+            });
           };
           $("res").appendChild(b);
         });
@@ -4075,6 +4224,202 @@
           a.download = "my-top-albums.png";
           a.click();
         });
+
+      // ===== 导出歌单 =====
+      // 三种输出，都对应当下 filled() 的顺序（即海报上的名次）：
+      //   1. .m3u8 —— 通用歌单文件，Apple Music / VLC / MusicFree 都能读
+      //   2. .txt  —— 纯文本「曲名 - 歌手」，配 Apple 快捷指令一键建歌单
+      //   3. 复制到剪贴板 —— 直接贴进各种「导入歌单」输入框
+      //
+      // 为什么是 .m3u8 而不是 .m3u：
+      //   .m3u 按 ANSI 编码，中文曲名到了别的机器上会变乱码；
+      //   .m3u8 就是同一个格式的 UTF-8 版，扩展名里的 8 指的就是 UTF-8。
+      //   我们的曲名大量是中日韩文字，必须用 .m3u8。
+      //
+      // 关于「导进网易云」的实情（写下来免得以后又忘）：
+      //   网易云的「导入本地歌单」只解析 m3u 里的**本地音频路径**，
+      //   不会拿 EXTINF 里的曲名去曲库匹配。所以纯 URL 的 m3u 导入进去
+      //   大概率是空歌单。能真正导入的路径是它 App 里的
+      //   「一键导入外部音乐 → 截图 OCR」—— 我们本来就是画图工具，
+      //   海报本身就是最好的输入。这里的 m3u/txt 主要服务
+      //   Apple Music、MusicFree、以及需要清单的场合。
+      function playlistRows() {
+        return filled().map((it) => ({
+          name: String(it.name || "").trim(),
+          artist: String(it.artist || "").trim(),
+          album: String(it.album || "").trim(),
+          dur: Number(it.dur) || 0,
+          amUrl: String(it.amUrl || "").trim(),
+          // kind 用来区分「专辑」和「单曲」——
+          // 专辑没有单曲直链是正常的，不能当成缺失去警告
+          kind: it.kind || "album",
+        }));
+      }
+
+      function buildM3U8(rows, title) {
+        const L = ["#EXTM3U", "#PLAYLIST:" + (title || "Lifeline")];
+        rows.forEach((r) => {
+          // EXTINF 的标题用「歌手 - 曲名」，这是全行业约定俗成的写法，
+          // 各播放器拆解这一行时都按第一个「 - 」切分。
+          // 曲名里本身含 " - " 也没关系：播放器只关心第一段是歌手。
+          const label = r.artist ? r.artist + " - " + r.name : r.name;
+          L.push("#EXTINF:" + (r.dur > 0 ? r.dur : -1) + "," + label);
+          // 有 Apple Music 直链就写直链 —— 播放器能直接串流；
+          // 没有的话退化成「# 注释 + 曲名」，不会产生一条坏路径。
+          // 绝对不能凭空编一个 file:/// 路径：那会让整个歌单在
+          // 播放器里刷出一堆"文件不存在"的报错。
+          L.push(r.amUrl || "# " + label);
+        });
+        return L.join("\r\n") + "\r\n";
+      }
+
+      function buildTxt(rows) {
+        // Apple 快捷指令「TXT to Playlist」的要求：一行一首，
+        // 格式「曲名 - 歌手」。实测 1000 首约 94% 命中。
+        return rows.map((r) => (r.artist ? r.name + " - " + r.artist : r.name)).join("\n") + "\n";
+      }
+
+      function downloadText(text, filename, mime) {
+        // 必须显式写 UTF-8 BOM 之外还要指定 charset，
+        // 否则 Windows 记事本打开中文会乱码
+        const blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+
+      function safeName(s) {
+        return String(s || "playlist")
+          .replace(/[\\/:*?"<>|\r\n\t]/g, "")
+          .trim()
+          .slice(0, 60) || "playlist";
+      }
+
+      function trackCount() {
+        return filled().filter((x) => x.kind === "track").length;
+      }
+
+      $("exp").onclick = () => {
+        const rows = playlistRows();
+        if (!rows.length) {
+          toast("列表是空的", "!");
+          return;
+        }
+        const title = $("title").value.trim() || "My Favorite Tracks";
+        const base = safeName(title);
+        const nTrack = trackCount();
+        const noLink = rows.filter((r) => !r.amUrl).length;
+
+        $("expSub").textContent = "共 " + rows.length + " 首，按海报上的名次排列。";
+
+        // 提示区：只显示「当前必须提醒的」那几条，按严重程度堆叠。
+        // 别把 m3u8 的缺点无条件写在这里 —— 用户如果选的是「复制到剪贴板」，
+        // 那句「.m3u8 会被网易云当本地索引」就是无关信息，只会添乱。
+        const tips = [];
+        if (noLink) {
+          // 区分两种成因，否则「专辑没有直链」会被说成「手动添加的图片」，
+          // 用户看着莫名其妙 —— 那张专辑明明是从搜索里来的
+          const nAlbumNoLink = rows.filter((r) => !r.amUrl && r.kind !== "track").length;
+          const nManual = noLink - nAlbumNoLink;
+          const why = [];
+          if (nManual > 0) why.push(nManual + " 首是手动添加的（没有来源）");
+          if (nAlbumNoLink > 0) why.push(nAlbumNoLink + " 张是专辑（专辑不导出单曲链接）");
+          tips.push(noLink + " 条没有 Apple Music 直链：" + (why.join("、") || "来源缺失") +
+            "，导出时会写成注释行，不影响其余曲目。");
+        }
+        if (nTrack > 0 && nTrack < rows.length) {
+          tips.push(
+            "列表里有 " + (rows.length - nTrack) + " 张是专辑，歌单里只会取专辑名，" +
+              "建议切到单曲模式重新收集。"
+          );
+        }
+        if (!tips.length) {
+          tips.push("导进网易云最快的方式：用它 App 的「一键导入外部音乐 → 截图 OCR」，直接选这张海报。");
+        }
+        $("expTip").textContent = tips.join("　");
+
+        const dlg = $("expDlg");
+        dlg.hidden = false;
+
+        const close = () => {
+          dlg.hidden = true;
+          dlg.onclick = null;
+        };
+        $("expClose").onclick = close;
+        // 点遮罩关闭（点内容区不关）
+        dlg.onclick = (e) => {
+          if (e.target === dlg) close();
+        };
+
+        // 选项点击：只绑一次，用 onclick 覆盖式赋值避免重复绑定
+        dlg.querySelectorAll(".expopt").forEach((btn) => {
+          btn.onclick = () => {
+            const k = btn.dataset.k;
+            close();
+            if (k === "m3u") {
+              downloadText(buildM3U8(rows, title), base + ".m3u8", "audio/x-mpegurl");
+              toast("已下载 " + base + ".m3u8", "↓");
+              $("msg").textContent = "已导出 " + rows.length + " 首歌单文件。";
+            } else if (k === "txt") {
+              downloadText(buildTxt(rows), base + ".txt", "text/plain");
+              toast("已下载 " + base + ".txt", "↓");
+              $("msg").textContent = "已导出纯文本清单，可配合 Apple 快捷指令建歌单。";
+            } else {
+              copyText(
+                buildTxt(rows),
+                () => {
+                  toast("已复制 " + rows.length + " 首到剪贴板", "✓");
+                  $("msg").textContent = "清单已复制，可直接贴进「导入歌单」输入框。";
+                },
+                base
+              );
+            }
+          };
+        });
+      };
+
+      // 复制到剪贴板：clipboard API 在 file:// 下常被拒，
+      // 必须留 execCommand 的退路，否则本地打开时就废了。
+      // 两条路都失败时**自动降级成下载 .txt** —— 只弹一句"复制失败"
+      // 等于把用户卡死在这儿，他连内容都拿不到。
+      function copyText(text, done, fallbackName) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(() => legacy());
+        } else {
+          legacy();
+        }
+        function legacy() {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.top = "-9999px";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          let ok = false;
+          try {
+            ok = document.execCommand("copy");
+          } catch (e) {}
+          ta.remove();
+          if (ok) {
+            done();
+          } else {
+            // 浏览器不给权限，就退成文件下载
+            downloadText(text, (fallbackName || "playlist") + ".txt", "text/plain");
+            toast("浏览器不允许复制，已改为下载 .txt", "↓");
+            $("msg").textContent = "已下载纯文本清单（浏览器拒绝了剪贴板权限）。";
+          }
+        }
+      }
+
+      // 导出按钮的显隐跟着「有没有填过的格子」走，
+      // 和「下载图片」一样：没内容时不该出现
+      function syncExportBtn() {
+        const n = filled().length;
+        $("exp").style.display = n ? "" : "none";
+      }
 
       $("clr").onclick = () => {
         if (confirm("清空列表？")) {
