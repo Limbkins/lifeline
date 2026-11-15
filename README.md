@@ -130,7 +130,7 @@ python3 -m http.server 8000
 | 数据源 | [iTunes Search API](https://performance-partners.apple.com/search-api)（按查询语种动态选地区） |
 | 存储 | IndexedDB（列表数据）、localStorage（偏好设置） |
 | 渲染 | 原生 Canvas 2D 绘制海报 |
-| 字体 | Fontsource CDN 按需加载，中文字库分片下载 |
+| 字体 | Fontsource CDN 按需加载，中文字库分片下载；单曲版式内嵌 Inter 900（23KB latin 子集） |
 | 依赖 | 无 |
 
 ### 几个实现细节
@@ -209,6 +209,21 @@ canvas 请求 `normal` 时会匹配失败并静默回退系统字体。
 `File > Library > Import Playlist` 菜单项，但只识别本地音频文件路径，
 遇到 `music.apple.com` 这类 URL 会静默丢弃，结果是一张空歌单。
 `.m3u8` 的正确用法是交给 Soundiiz，由它读直链再匹配到目标平台。
+
+**单曲版式内嵌 Inter，不用系统 Helvetica。** 两个原因，都是实测出来的：
+
+- **字重被静默折叠。** macOS / iOS 的 Helvetica 只有 400 和 700 两档，
+  代码里请求的 `900` 会被浏览器直接降级成 700。量「TOP TRACKS」的墨迹像素数，
+  Helvetica 900 与 700 完全相等（22611 = 22611），说明设计上的 Black 字重
+  从来没有真正画出来过。
+- **跨平台不一致。** Helvetica 只有苹果系统有，Windows 会落到 Arial、
+  Android 落到 Roboto，同一份海报在不同设备上字重和字宽都不一样。
+
+改用内嵌的 Inter 900（latin 子集 23KB）后，900 / 700 / 400 的墨迹量为
+27978 / 18552 / 14230，三档真正拉开。它没有中文字形，字体栈后面挂了
+`PingFang SC` 等中文字体把 CJK 接住，中文曲名不会变豆腐块。
+
+加载有 2.5 秒超时兜底：CDN 半死不活时宁可先用回退字体出图，也不能把整页卡住。
 
 **歌单文件用 `.m3u8` 不用 `.m3u`。** `.m3u` 按 ANSI 编码，中文曲名到别的机器会乱码；
 `.m3u8` 是同一格式的 UTF-8 版。曲名大量是中日韩文字时，这个区别是硬性的。

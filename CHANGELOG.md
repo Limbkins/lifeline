@@ -5,6 +5,55 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.2] - 2026-11-15
+
+修单曲版式的**字重从未生效**问题，并让海报在不同系统上长得一样。
+
+### 修复
+
+- **`900` 字重被静默折叠成 `700`。** macOS / iOS 的 Helvetica 只有 400 和 700
+  两档，`font: 900 ... Helvetica` 会被浏览器直接降级。量「TOP TRACKS」的墨迹
+  像素数，Helvetica 900 与 700 完全相等（22611 = 22611）—— 也就是说设计上
+  想要的 Black 字重**一次都没有真正画出来过**。用户反馈「看起来不像 Helvetica」，
+  实际不是字形不对，是笔画始终偏细。
+
+- **跨平台不一致。** Helvetica 只有苹果系统有，Windows 落到 Arial、Android 落到
+  Roboto。同一份海报在不同设备上字重与字宽都不同。
+
+### 变更
+
+- **内嵌 Inter 900 / 700**（Fontsource latin 子集，各约 23KB），family 名注册为
+  `Lifeline Grotesk`，作为单曲版式的首选字体，系统字体保留作兜底。
+  修复后 900 / 700 / 400 的墨迹量为 27978 / 18552 / 14230，三档真正拉开；
+  标题区白色像素比修复前增加 26%。
+
+- **中文兜底不变。** Inter 没有中文字形，字体栈后面挂
+  `PingFang SC / Hiragino Sans GB / Microsoft YaHei / Noto Sans SC`，
+  实测「東風破」墨迹与修复前完全一致（6215 = 6215），中文未受影响。
+
+- **加载有 2.5 秒超时兜底。** CDN 连上但不响应时，`document.fonts.load`
+  会一直悬着把出图整个卡死。超时就先用回退字体画，宁可字重差一点也不能不出图。
+
+### 排查过程（结论与最初假设相反）
+
+最初怀疑「字体栈里没写 Helvetica」，查代码发现写的就是它。于是做字形鉴定：
+
+| 判据 | 实测 | 结论 |
+| --- | --- | --- |
+| S 的两端切角 | 完全水平 | Helvetica（Arial 是斜切） |
+| C 的末端切角 | 水平 | Helvetica |
+| 标题墨迹宽高比 | 8.469，Helvetica 700 实测 8.432（差 0.4%） | 是 Helvetica |
+| 逐像素比对 | Helvetica 700 差异 0.0699，Arial 0.1082 | 是 Helvetica |
+
+字形没问题，问题在字重 —— 这只能靠比较同 family 不同字重的墨迹量才发现。
+
+### 验证
+
+- 回归 170 项全通过（regress 67 + trackfit 58 + titlefit 45）。
+  trackfit 里一处引用 `TRACK_FONT` 的断言同步改为 `TRACK_FONT_STACK()`。
+- `TRACK_FONT` 改为函数 `TRACK_FONT_STACK()`：`SYS_CN` 定义在文件更靠后处，
+  直接拼常量会撞 TDZ（`Cannot access before initialization`）。
+
 ## [1.4.1] - 2026-11-15
 
 修**「下载完不知道该怎么用」**：1.4.0 只做了导出，没交代导出之后怎么办。
