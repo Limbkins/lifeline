@@ -130,7 +130,7 @@ python3 -m http.server 8000
 | 数据源 | [iTunes Search API](https://performance-partners.apple.com/search-api)（按查询语种动态选地区） |
 | 存储 | IndexedDB（列表数据）、localStorage（偏好设置） |
 | 渲染 | 原生 Canvas 2D 绘制海报 |
-| 字体 | Fontsource CDN 按需加载，中文字库分片下载；单曲版式内嵌 Roboto 900（25KB latin 子集） |
+| 字体 | Fontsource CDN 按需加载，中文字库分片下载 |
 | 依赖 | 无 |
 
 ### 几个实现细节
@@ -209,31 +209,6 @@ canvas 请求 `normal` 时会匹配失败并静默回退系统字体。
 `File > Library > Import Playlist` 菜单项，但只识别本地音频文件路径，
 遇到 `music.apple.com` 这类 URL 会静默丢弃，结果是一张空歌单。
 `.m3u8` 的正确用法是交给 Soundiiz，由它读直链再匹配到目标平台。
-
-**单曲版式内嵌 Roboto，不用系统 Helvetica。** 三个原因，都是实测出来的：
-
-- **字重被静默折叠。** macOS / iOS 的 Helvetica 只有 400 和 700 两档，
-  代码里请求的 `900` 会被浏览器直接降级成 700。量「TOP TRACKS」的墨迹像素数，
-  Helvetica 900 与 700 完全相等（22611 = 22611），说明设计上的 Black 字重
-  从来没有真正画出来过。
-- **跨平台不一致。** Helvetica 只有苹果系统有，Windows 会落到 Arial、
-  Android 落到 Roboto，同一份海报在不同设备上字重和字宽都不一样。
-- **不能商用，也不能嵌入。** Helvetica 归 Monotype，桌面授权约 $35–65/字重，
-  webfont 按 PV 年计费。「Mac 上自带」不等于有分发授权，从系统里提取
-  `Helvetica.ttc` 转 WOFF2 上传是明确的越权行为。本项目是 MIT 协议，
-  裸嵌商业字体等于把这个风险转嫁给每个使用者。
-
-**选 Roboto 而不是 Inter，是因为数字宽度。** 先试过 Inter 900，字重是真的，
-但数字明显偏宽 —— 同一字高下「9」宽 +20.5%、「4」宽 +22.2%、
-「0」宽 +30.0%，平均 +18.6%，笔画也粗 19%~33%。封面上的大数字是这张海报的
-主角，宽 20% 就从 Helvetica 的观感跑掉了。
-
-Roboto 900 的同高数字宽度平均只差 **3.8%**（9:+1.4% 4:+3.9% 3:+4.7% 1:+5.2%），
-笔画粗 +4%~+15%，既有真正的 Black 字重，骨架又最贴近 Helvetica。
-它是 latin 子集约 25KB，没有中文字形，字体栈后面挂了
-`PingFang SC` 等中文字体把 CJK 接住，中文曲名不会变豆腐块。
-
-加载有 2.5 秒超时兜底：CDN 半死不活时宁可先用回退字体出图，也不能把整页卡住。
 
 **歌单文件用 `.m3u8` 不用 `.m3u`。** `.m3u` 按 ANSI 编码，中文曲名到别的机器会乱码；
 `.m3u8` 是同一格式的 UTF-8 版。曲名大量是中日韩文字时，这个区别是硬性的。
