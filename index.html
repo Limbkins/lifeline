@@ -65,18 +65,25 @@
         font-style: normal;
         font-display: swap;
       }
-      /* Inter —— 单曲版式的正文与数字用字。
+      /* Roboto —— 单曲版式的正文与数字用字。
          为什么要嵌这个而不是继续用 Helvetica：
          ① Helvetica 在 macOS/iOS 上只有 400 / 700 两档字重，代码请求的
             `900` 会被浏览器静默折叠成 700 —— 设计上的 Black 字重从来没生效过。
             实测：900 与 700 的墨迹像素数完全相同（2959 vs 2959）。
          ② Helvetica 只有苹果系统有，Windows / Android 会落到 Arial，
             骨架虽然接近但字重更细、字母更窄，同一份海报在不同设备上不一样。
-         Inter 是 Helvetica 风格的开源体，有真正的 900，且 latin 子集仅 23KB。
+         ③ Helvetica 是 Monotype 的商用字体，不能下载嵌入。本项目是 MIT 协议，
+            裸嵌商业字体会把使用者一起拖进版权风险。
+            「Mac 自带」只代表系统里有一份，不代表拿到了分发授权。
+         为什么不选 Inter：上一版试过 Inter 900，字重是真的，但数字明显偏宽 ——
+         同一字高下「9」宽 +20.5%、「4」宽 +22.2%，笔画也粗 19%~33%。
+         封面上的大数字是这张海报的主角，宽度一变观感就从「Helvetica」跑掉了。
+         Roboto 900 的同高数字宽度只差 3.8%（9:+1.4% 3:+4.7% 1:+5.2% 4:+3.9%），
+         笔画粗 4%~15%，是这几款开源体里最贴近 Helvetica 骨架又有真 Black 字重的。
          它只覆盖拉丁字母与数字；中文仍由后面的系统字体接住，不会出豆腐块。 */
       @font-face {
         font-family: "Lifeline Grotesk";
-        src: url("https://cdn.jsdelivr.net/npm/@fontsource/inter@5/files/inter-latin-900-normal.woff2")
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/roboto@5/files/roboto-latin-900-normal.woff2")
           format("woff2");
         font-weight: 900;
         font-style: normal;
@@ -84,7 +91,7 @@
       }
       @font-face {
         font-family: "Lifeline Grotesk";
-        src: url("https://cdn.jsdelivr.net/npm/@fontsource/inter@5/files/inter-latin-700-normal.woff2")
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/roboto@5/files/roboto-latin-700-normal.woff2")
           format("woff2");
         font-weight: 700;
         font-style: normal;
@@ -3385,8 +3392,8 @@
       // 一行都不用改 —— 这是"不破坏现有功能"最省事的做法。
       // 单曲版式的字体栈。
       //
-      // 首选 "Lifeline Grotesk"（见 head 里的 @font-face，实际是 Inter）。
-      // 换掉 Helvetica 的原因有两条，都是实测出来的：
+      // 首选 "Lifeline Grotesk"（见 head 里的 @font-face，实际是 Roboto）。
+      // 换掉 Helvetica 的原因有三条，都是实测出来的：
       //
       // ① **字重被折叠**。Helvetica 在 macOS/iOS 只有 400 和 700，
       //    下面 bold() 请求的 900 会被浏览器静默降级成 700。
@@ -3394,14 +3401,23 @@
       //    也就是说设计上想要的 Black 字重从来没有画出来过。
       // ② **跨平台不一致**。Helvetica 只有苹果系统有，Windows 会落到 Arial、
       //    Android 落到 Roboto。同一份海报在不同设备上字重和字宽都不一样。
+      // ③ **授权**。Helvetica 归 Monotype，不能下载嵌入。本项目 MIT，
+      //    裸嵌商业字体等于把每个使用者都拖进版权风险。
       //
-      // Inter 有真正的 900，latin 子集仅 23KB。它没有中文字形，
-      // 所以后面必须挂中文字体把 CJK 接住 —— 否则中文曲名会变豆腐块。
+      // 为什么是 Roboto 而不是 Inter（上一版用过 Inter，被换掉了）：
+      // Inter 900 字重是真的，但数字明显偏宽。同一字高下量宽度，
+      // 「9」+20.5%、「4」+22.2%、「0」+30.0%，笔画也粗 19%~33%。
+      // 封面大数字是这张海报的主角，宽 20% 就从 Helvetica 的观感跑掉了。
+      // Roboto 900 的同高数字只差 3.8%（9:+1.4% 3:+4.7% 1:+5.2% 4:+3.9%），
+      // 笔画粗 4%~15%，是既有真 Black 字重、骨架又最贴近 Helvetica 的开源体。
+      //
+      // Roboto 没有中文字形，所以后面必须挂中文字体把 CJK 接住 ——
+      // 否则中文曲名会变豆腐块。
       //
       // 写成函数而不是常量：SYS_CN 定义在本文件更靠后的位置，
       // 直接拼进常量字符串会撞上 TDZ（Cannot access before initialization）。
       const TRACK_FONT_STACK = () =>
-        `"Lifeline Grotesk", Helvetica, Arial, ${SYS_CN}, sans-serif`;
+        `"Lifeline Grotesk", Roboto, Helvetica, Arial, ${SYS_CN}, sans-serif`;
 
       // 数字叠加版的主画布基准。取 2400 是因为专辑版式也是 2400，
       // 用户连续生成两种海报时尺寸观感一致。
@@ -4115,7 +4131,7 @@
           const titleTxt = $("title").value.trim() || "Top Albums of My Life";
           const authorTxt = $("author").value.trim();
 
-          // 单曲版式另有一份固定字体（Lifeline Grotesk / Inter 900）。
+          // 单曲版式另有一份固定字体（Lifeline Grotesk / Roboto 900）。
           // 它不在 ensureFont 的 fonts 表里，必须单独 load ——
           // 否则首帧会用回落的 Helvetica 700 画，刷新一下才变粗，
           // 这个"闪一下字重"的 bug 极难在截图里复现，但用户一定能感觉到。
